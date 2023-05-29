@@ -42,6 +42,7 @@ import {
   DocumentSelector,
   RegistrationParams,
   RegistrationRequest,
+  Trace,
 } from "vscode-languageserver-protocol";
 
 import {
@@ -234,6 +235,21 @@ const myConsole = {
     },
 };
 
+function logTrace(message: string, data?: any) {
+  const msg = `[Trace - ${(new Date().toLocaleTimeString())}] ${message}`;
+  logger.info(msg);
+  if (data) {
+    logger.info(JSON.stringify(data));
+  }
+}
+
+function logObjectTrace(data: any) {
+  if (data) {
+    logger.info(`[Trace - ${(new Date().toLocaleTimeString())}] `)
+    logger.info(JSON.stringify(data));
+  }
+}
+
 function createConnection(
   input: MessageReader,
   output: MessageWriter,
@@ -246,6 +262,16 @@ function createConnection(
     errorHandler(data[0], data[1], data[2]);
   });
   connection.onClose(closeHandler);
+  connection.trace(Trace.Verbose, {
+    log(messageOrDataObject: string | any, data?: string) {
+      if (Is.string(messageOrDataObject)) {
+        logTrace(messageOrDataObject, data)
+      } else {
+        logObjectTrace(messageOrDataObject)
+      }
+      // message_emacs('here' + JSON.stringify(messageOrDataObject) + JSON.stringify(data))
+    }
+  })
   return connection;
 }
 
@@ -403,8 +429,7 @@ export class LanguageClient {
       })
     } catch (error) {
       this.error(
-        `Registering request handler ${Is.string(type) ? type : type.method
-        } failed.`,
+        `Registering request handler ${Is.toMethod(type)} failed.`,
         (error as Error).message
       )
       throw error
