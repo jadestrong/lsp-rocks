@@ -1,5 +1,6 @@
 import { ClientCapabilities, CompletionItem, CompletionItemTag, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, InsertTextMode, MarkupKind, RegistrationType } from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
+import { message_emacs } from "../epc-utils";
 import { RunnableDynamicFeature, ensure } from "./features";
 
 export interface EmacsCompletionParams extends CompletionParams {
@@ -48,6 +49,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
     const { prefix } = params as EmacsCompletionParams;
 
     const resp = await this.client.sendRequest(CompletionRequest.type, params);
+    message_emacs('completion resp' + JSON.stringify(resp))
     if (resp == null) return [];
 
     // TODO

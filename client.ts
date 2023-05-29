@@ -1,60 +1,116 @@
-
-import * as Is from './util';
-import * as fs from 'fs';
-import { ChildProcess, spawn } from 'child_process';
+import * as Is from "./util";
+import * as fs from "fs";
+import { ChildProcess, spawn } from "child_process";
 
 import {
-  CancellationToken, ClientCapabilities, DiagnosticTag, DidChangeTextDocumentNotification,
-  ErrorCodes, ExitNotification, FailureHandlingKind, InitializeParams,
-  InitializeRequest, InitializeResult, InitializedNotification, LogMessageNotification,
-  MessageType, NotificationType, NotificationType0, PositionEncodingKind,
-  ProtocolConnection, ProtocolNotificationType, ProtocolNotificationType0, ProtocolRequestType,
-  ProtocolRequestType0, RequestType, RequestType0, ResourceOperationKind, SemanticTokensDeltaRequest,
-  SemanticTokensRangeRequest, SemanticTokensRequest, ServerCapabilities, ShutdownRequest, TextDocumentSyncKind,
-  TextDocumentSyncOptions, createProtocolConnection,
-} from 'vscode-languageserver-protocol';
+  CancellationToken,
+  ClientCapabilities,
+  DiagnosticTag,
+  DidChangeTextDocumentNotification,
+  ErrorCodes,
+  ExitNotification,
+  FailureHandlingKind,
+  InitializeParams,
+  InitializeRequest,
+  InitializeResult,
+  InitializedNotification,
+  LogMessageNotification,
+  MessageType,
+  NotificationType,
+  NotificationType0,
+  PositionEncodingKind,
+  ProtocolConnection,
+  ProtocolNotificationType,
+  ProtocolNotificationType0,
+  ProtocolRequestType,
+  ProtocolRequestType0,
+  RequestType,
+  RequestType0,
+  ResourceOperationKind,
+  SemanticTokensDeltaRequest,
+  SemanticTokensRangeRequest,
+  SemanticTokensRequest,
+  ServerCapabilities,
+  ShutdownRequest,
+  TextDocumentSyncKind,
+  TextDocumentSyncOptions,
+  createProtocolConnection,
+  RequestHandler0,
+  RequestHandler,
+  GenericRequestHandler,
+  Disposable,
+  DocumentSelector,
+  RegistrationParams,
+  RegistrationRequest,
+} from "vscode-languageserver-protocol";
 
-import { CancellationStrategy, ConnectionOptions, Message, MessageReader, MessageSignature, MessageWriter, RAL, ResponseError, StreamMessageReader, StreamMessageWriter, generateRandomPipeName } from 'vscode-jsonrpc/node';
-import { DynamicFeature, ensure, RunnableDynamicFeature } from './features/features';
-import { DidChangeTextDocumentFeature, DidCloseTextDocumentFeature, DidOpenTextDocumentFeature, DidSaveTextDocumentFeature, WillSaveTextDocumentFeature } from './features/textSynchronization';
-import { CompletionFeature, CompletionItemResolveFeature } from './features/completion';
-import { DefinitionFeature } from './features/definition';
-import { DeclarationFeature } from './features/declaration';
-import { ReferencesFeature } from './features/reference';
-import { ImplementationFeature } from './features/implementation';
+import {
+  CancellationStrategy,
+  ConnectionOptions,
+  Message,
+  MessageReader,
+  MessageSignature,
+  MessageWriter,
+  RAL,
+  ResponseError,
+  StreamMessageReader,
+  StreamMessageWriter,
+  generateRandomPipeName,
+} from "vscode-jsonrpc/node";
+import {
+  DynamicFeature,
+  ensure,
+  RunnableDynamicFeature,
+} from "./features/features";
+import {
+  DidChangeTextDocumentFeature,
+  DidCloseTextDocumentFeature,
+  DidOpenTextDocumentFeature,
+  DidSaveTextDocumentFeature,
+  WillSaveTextDocumentFeature,
+} from "./features/textSynchronization";
+import {
+  CompletionFeature,
+  CompletionItemResolveFeature,
+} from "./features/completion";
+import { DefinitionFeature } from "./features/definition";
+import { DeclarationFeature } from "./features/declaration";
+import { ReferencesFeature } from "./features/reference";
+import { ImplementationFeature } from "./features/implementation";
 
-import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { TypeDefinitionFeature } from './features/typeDefinition';
-import { HoverFeature } from './features/hover';
-import { SignatureHelpFeature } from './features/signatureHelp';
-import { PrepareRenameFeature, RenameFeature } from './features/rename';
-
+import * as path from "node:path";
+import { pathToFileURL } from "node:url";
+import { TypeDefinitionFeature } from "./features/typeDefinition";
+import { HoverFeature } from "./features/hover";
+import { SignatureHelpFeature } from "./features/signatureHelp";
+import { PrepareRenameFeature, RenameFeature } from "./features/rename";
+import { logger, message_emacs } from "./epc-utils";
+import { ConfigurationFeature } from "./features/configurationFeature";
 
 enum ClientState {
-  Initial = 'initial',
-  Starting = 'starting',
-  StartFailed = 'startFailed',
-  Running = 'running',
-  Stopping = 'stopping',
-  Stopped = 'stopped',
+  Initial = "initial",
+  Starting = "starting",
+  StartFailed = "startFailed",
+  Running = "running",
+  Stopping = "stopping",
+  Stopped = "stopped",
 }
 
 /**
-   * Signals in which state the language client is in.
-   */
+ * Signals in which state the language client is in.
+ */
 export enum State {
   /**
-     * The client is stopped or got never started.
-     */
+   * The client is stopped or got never started.
+   */
   Stopped = 1,
   /**
-     * The client is starting but not ready yet.
-     */
+   * The client is starting but not ready yet.
+   */
   Starting = 3,
   /**
-     * The client is running and ready.
-     */
+   * The client is running and ready.
+   */
   Running = 2,
 }
 
@@ -84,9 +140,15 @@ export interface SocketTransport {
 export type Transport = TransportKind | SocketTransport;
 
 namespace Transport {
-  export function isSocket(value: Transport | undefined): value is SocketTransport {
+  export function isSocket(
+    value: Transport | undefined
+  ): value is SocketTransport {
     const candidate = value as SocketTransport;
-    return candidate && candidate.kind === TransportKind.socket && Is.number(candidate.port);
+    return (
+      candidate &&
+      candidate.kind === TransportKind.socket &&
+      Is.number(candidate.port)
+    );
   }
 }
 
@@ -121,7 +183,11 @@ export interface MessageTransports {
 export namespace MessageTransports {
   export function is(value: any): value is MessageTransports {
     const candidate: MessageTransports = value;
-    return candidate && MessageReader.is(value.reader) && MessageWriter.is(value.writer);
+    return (
+      candidate &&
+      MessageReader.is(value.reader) &&
+      MessageWriter.is(value.writer)
+    );
   }
 }
 
@@ -129,6 +195,7 @@ type ResolvedClientOptions = {
   stdioEncoding: string;
   initializationOptions?: any | (() => any);
   progressOnInitialization: boolean;
+  documentSelector?: DocumentSelector
   connectionOptions?: {
     cancellationStrategy?: CancellationStrategy;
     maxRestartCount?: number;
@@ -137,6 +204,7 @@ type ResolvedClientOptions = {
     isTrusted: boolean;
     supportHtml: boolean;
   };
+  disableDynamicRegister?: boolean
 };
 
 interface ConnectionErrorHandler {
@@ -147,15 +215,36 @@ interface ConnectionCloseHandler {
   (): void;
 }
 
+const myConsole = {
+    error: function (...data: any[]): void {
+      const msg = data.map(item => JSON.stringify(item)).join(' ');
+      message_emacs(`[myConsole error] ${msg}`);
+    },
+    info: function (...data: any[]): void {
+      const msg = data.map(item => JSON.stringify(item)).join(' ');
+      message_emacs(`[myConsole info] ${msg}`);
+    },
+    log: function (...data: any[]): void {
+      const msg = data.map(item => JSON.stringify(item)).join(' ');
+      message_emacs(`[myConsole log] ${msg}`);
+    },
+    warn: function (...data: any[]): void {
+      const msg = data.map(item => JSON.stringify(item)).join(' ');
+      message_emacs(`[myConsole warn] ${msg}`);
+    },
+};
+
 function createConnection(
   input: MessageReader,
   output: MessageWriter,
   errorHandler: ConnectionErrorHandler,
   closeHandler: ConnectionCloseHandler,
-  options?: ConnectionOptions,
+  options?: ConnectionOptions
 ): ProtocolConnection {
-  const connection = createProtocolConnection(input, output, console, options);
-  connection.onError((data) => { errorHandler(data[0], data[1], data[2]); });
+  const connection = createProtocolConnection(input, output, myConsole, options);
+  connection.onError((data) => {
+    errorHandler(data[0], data[1], data[2]);
+  });
   connection.onClose(closeHandler);
   return connection;
 }
@@ -166,7 +255,7 @@ function handleChildProcessStartError(process: ChildProcess, message: string) {
   }
 
   return new Promise<MessageTransports>((_, reject) => {
-    process.on('error', (err) => {
+    process.on("error", (err) => {
       reject(`${message} ${err}`);
     });
     // the error event should always be run immediately,
@@ -175,14 +264,14 @@ function handleChildProcessStartError(process: ChildProcess, message: string) {
   });
 }
 
-
 export class LanguageClient {
-
   readonly _project: string;
 
   readonly _language: string;
 
   readonly _name: string;
+
+  _initializationOptions: any;
 
   private readonly _serverOptions: ServerOptions;
 
@@ -210,7 +299,12 @@ export class LanguageClient {
 
   private _dynamicFeatures: Map<string, DynamicFeature<any>>;
 
-  constructor(language: string, project: string, clientInfo: any, serverOptions: ServerOptions) {
+  constructor(
+    language: string,
+    project: string,
+    clientInfo: any,
+    serverOptions: ServerOptions
+  ) {
     this._name = `${project}:${language}`;
     this._project = project;
     this._language = language;
@@ -220,7 +314,7 @@ export class LanguageClient {
     this._features = [];
     this._dynamicFeatures = new Map();
     this._clientOptions = {
-      stdioEncoding: 'utf-8',
+      stdioEncoding: "utf-8",
       progressOnInitialization: false,
       markdown: {
         isTrusted: true,
@@ -239,44 +333,122 @@ export class LanguageClient {
     this._state = value;
   }
 
-  public sendRequest<R, PR, E, RO>(type: ProtocolRequestType0<R, PR, E, RO>, token?: CancellationToken): Promise<R>;
-  public sendRequest<P, R, PR, E, RO>(type: ProtocolRequestType<P, R, PR, E, RO>, params: P, token?: CancellationToken): Promise<R>;
-  public sendRequest<R, E>(type: RequestType0<R, E>, token?: CancellationToken): Promise<R>;
-  public sendRequest<P, R, E>(type: RequestType<P, R, E>, params: P, token?: CancellationToken): Promise<R>;
+  public sendRequest<R, PR, E, RO>(
+    type: ProtocolRequestType0<R, PR, E, RO>,
+    token?: CancellationToken
+  ): Promise<R>;
+  public sendRequest<P, R, PR, E, RO>(
+    type: ProtocolRequestType<P, R, PR, E, RO>,
+    params: P,
+    token?: CancellationToken
+  ): Promise<R>;
+  public sendRequest<R, E>(
+    type: RequestType0<R, E>,
+    token?: CancellationToken
+  ): Promise<R>;
+  public sendRequest<P, R, E>(
+    type: RequestType<P, R, E>,
+    params: P,
+    token?: CancellationToken
+  ): Promise<R>;
   public sendRequest<R>(method: string, token?: CancellationToken): Promise<R>;
-  public sendRequest<R>(method: string, param: any, token?: CancellationToken): Promise<R>;
-  public async sendRequest<R>(type: string | MessageSignature, ...params: any[]): Promise<R> {
-    if (this.$state === ClientState.StartFailed || this.$state === ClientState.Stopping || this.$state === ClientState.Stopped) {
-      return Promise.reject(new ResponseError(ErrorCodes.ConnectionInactive, 'Client is not running'));
+  public sendRequest<R>(
+    method: string,
+    param: any,
+    token?: CancellationToken
+  ): Promise<R>;
+  public async sendRequest<R>(
+    type: string | MessageSignature,
+    ...params: any[]
+  ): Promise<R | undefined> {
+    if (
+      this.$state === ClientState.StartFailed ||
+      this.$state === ClientState.Stopping ||
+      this.$state === ClientState.Stopped
+    ) {
+      return Promise.reject(
+        new ResponseError(
+          ErrorCodes.ConnectionInactive,
+          "Client is not running"
+        )
+      );
     }
     try {
-      // Ensure we have a connection before we force the document sync.
-      const connection = await this.$start();
       // await this.forceDocumentSync();
-      return await connection.sendRequest<R>(type, ...params);
+      logger.info(`[sendRequest] ${Is.toMethod(type)}`, ...params)
+      return await this._connection?.sendRequest<R>(Is.toMethod(type), ...params);
     } catch (error) {
-      this.error(`Sending request ${Is.string(type) ? type : type.method} failed.`, error);
+      this.error(`Sending request ${Is.toMethod(type)} failed. ` + (error as Error).message);
       throw error;
     }
   }
 
-
-  public sendNotification<RO>(type: ProtocolNotificationType0<RO>): Promise<void>;
-  public sendNotification<P, RO>(type: ProtocolNotificationType<P, RO>, params?: P): Promise<void>;
-  public sendNotification(type: NotificationType0): Promise<void>;
-  public sendNotification<P>(type: NotificationType<P>, params?: P): Promise<void>;
-  public sendNotification(method: string): Promise<void>;
-  public sendNotification(method: string, params: any): Promise<void>;
-  public async sendNotification<P>(type: string | MessageSignature, params?: P): Promise<void> {
-    if (this.$state === ClientState.StartFailed || this.$state === ClientState.Stopping || this.$state === ClientState.Stopped) {
-      return Promise.reject(new ResponseError(ErrorCodes.ConnectionInactive, 'Client is not running'));
+  public onRequest<R, PR, E, RO>(type: ProtocolRequestType0<R, PR, E, RO>, handler: RequestHandler0<R, E>): Promise<Disposable>
+  public onRequest<P, R, PR, E, RO>(type: ProtocolRequestType<P, R, PR, E, RO>, handler: RequestHandler<P, R, E>): Promise<Disposable>
+  public onRequest<R, E>(type: RequestType0<R, E>, handler: RequestHandler0<R, E>): Promise<Disposable>
+  public onRequest<P, R, E>(type: RequestType<P, R, E>, handler: RequestHandler<P, R, E>): Promise<Disposable>
+  public onRequest<R, E>(method: string, handler: GenericRequestHandler<R, E>): Promise<Disposable>
+  public async onRequest<R, E>(type: string | MessageSignature, handler: GenericRequestHandler<R, E>): Promise<Disposable | undefined>  {
+    if (
+      this.$state === ClientState.StartFailed ||
+        this.$state === ClientState.Stopping ||
+        this.$state === ClientState.Stopped
+    ) {
+      throw new Error('Language client is not ready yet')
     }
     try {
-      // Ensure we have a connection before we force the document sync.
-      const connection = await this.$start();
-      return await connection.sendNotification(type, params);
+      return this._connection?.onRequest(Is.toMethod(type), (...params) => {
+        logger.info(`[onRequest] ${Is.toMethod(type)}`, ...params)
+        handler.call(null, ...params)
+      })
     } catch (error) {
-      this.error(`Sending notification ${Is.string(type) ? type : type.method} failed.`, error);
+      this.error(
+        `Registering request handler ${Is.string(type) ? type : type.method
+        } failed.`,
+        (error as Error).message
+      )
+      throw error
+    }
+  }
+
+  public sendNotification<RO>(
+    type: ProtocolNotificationType0<RO>
+  ): Promise<void>;
+  public sendNotification<P, RO>(
+    type: ProtocolNotificationType<P, RO>,
+    params?: P
+  ): Promise<void>;
+  public sendNotification(type: NotificationType0): Promise<void>;
+  public sendNotification<P>(
+    type: NotificationType<P>,
+    params?: P
+  ): Promise<void>;
+  public sendNotification(method: string): Promise<void>;
+  public sendNotification(method: string, params: any): Promise<void>;
+  public async sendNotification<P>(
+    type: string | MessageSignature,
+    params?: P
+  ): Promise<void> {
+    if (
+      this.$state === ClientState.StartFailed ||
+      this.$state === ClientState.Stopping ||
+      this.$state === ClientState.Stopped
+    ) {
+      return Promise.reject(
+        new ResponseError(
+          ErrorCodes.ConnectionInactive,
+          "Client is not running"
+        )
+      );
+    }
+    try {
+      logger.info(`[sendNotification] ${Is.toMethod(type)}`, params)
+      return await this._connection?.sendNotification(Is.toMethod(type), params);
+    } catch (error) {
+      this.error(
+        `Sending notification ${Is.string(type) ? type : type.method} failed.`,
+        error
+      );
       throw error;
     }
   }
@@ -286,10 +458,11 @@ export class LanguageClient {
     await this.start();
   }
 
-
   public async start(): Promise<void> {
     if (this.$state === ClientState.Stopping) {
-      throw new Error('Client is currently stopping. Can only restart a full stopped client');
+      throw new Error(
+        "Client is currently stopping. Can only restart a full stopped client"
+      );
     }
     // We are already running or are in the process of getting up
     // to speed.
@@ -318,34 +491,55 @@ export class LanguageClient {
         }
       });
       connection.listen();
+      this._connection = connection
+      this.initializeFeatures(connection)
+
+      connection.onRequest(RegistrationRequest.type, params =>
+        this.handleRegistrationRequest(params)
+      )
+      connection.onRequest('client/registerFeature', params => this.handleRegistrationRequest(params))
+
       await this.initialize(connection, this._clientInfo);
       resolve();
     } catch (error) {
       this.$state = ClientState.StartFailed;
-      this.error(`${this._name} client: couldn't create connection to server.`, error);
+      this.error(
+        `${this._name} client: couldn't create connection to server.`,
+        (error as Error).message
+      );
       reject(error);
     }
     return this._onStart;
   }
 
-  private async initialize(connection: ProtocolConnection, clientInfo: any): Promise<InitializeResult> {
+  private async initialize(
+    connection: ProtocolConnection,
+    clientInfo: any
+  ): Promise<InitializeResult> {
     // May language server need some initialization options.
     const langSreverConfig = `./langserver/${this._language}.json`;
-    const initializationOptions = fs.existsSync(path.join(__dirname, langSreverConfig)) ? require(langSreverConfig) : {};
+    this.info("langageConfgi" + langSreverConfig);
+    const initializationOptions = fs.existsSync(
+      path.join(__dirname, langSreverConfig)
+    )
+      ? require(langSreverConfig)
+      : {};
+    this._initializationOptions = initializationOptions
     const initParams: InitializeParams = {
       processId: null,
       clientInfo,
-      locale: 'en',
+      locale: "en",
       rootPath: this._project,
       rootUri: pathToFileURL(this._project).toString(),
       capabilities: this.computeClientCapabilities(),
       initializationOptions,
-      workspaceFolders: [{
-        uri: pathToFileURL(this._project).toString(),
-        name: this._project.slice(this._project.lastIndexOf('/')),
-      }],
+      workspaceFolders: [
+        {
+          uri: pathToFileURL(this._project).toString(),
+          name: this._project.slice(this._project.lastIndexOf("/")),
+        },
+      ],
     };
-
     this.fillInitializeParams(initParams);
     return this.doInitialize(connection, initParams);
   }
@@ -375,6 +569,7 @@ export class LanguageClient {
     this.registerFeature(new SignatureHelpFeature(this));
     this.registerFeature(new RenameFeature(this));
     this.registerFeature(new PrepareRenameFeature(this));
+    this.registerFeature(new ConfigurationFeature(this));
   }
 
   protected fillInitializeParams(params: InitializeParams): void {
@@ -387,41 +582,58 @@ export class LanguageClient {
 
   private computeClientCapabilities(): ClientCapabilities {
     const result: ClientCapabilities = {};
-    ensure(result, 'workspace')!.applyEdit = true;
+    ensure(result, "workspace")!.applyEdit = true;
 
-    const workspaceEdit = ensure(ensure(result, 'workspace')!, 'workspaceEdit')!;
+    const workspaceEdit = ensure(
+      ensure(result, "workspace")!,
+      "workspaceEdit"
+    )!;
     workspaceEdit.documentChanges = true;
-    workspaceEdit.resourceOperations = [ResourceOperationKind.Create, ResourceOperationKind.Rename, ResourceOperationKind.Delete];
+    workspaceEdit.resourceOperations = [
+      ResourceOperationKind.Create,
+      ResourceOperationKind.Rename,
+      ResourceOperationKind.Delete,
+    ];
     workspaceEdit.failureHandling = FailureHandlingKind.TextOnlyTransactional;
     workspaceEdit.normalizesLineEndings = true;
     workspaceEdit.changeAnnotationSupport = {
       groupsOnLabel: true,
     };
 
-    const diagnostics = ensure(ensure(result, 'textDocument')!, 'publishDiagnostics')!;
+    const diagnostics = ensure(
+      ensure(result, "textDocument")!,
+      "publishDiagnostics"
+    )!;
     diagnostics.relatedInformation = true;
     diagnostics.versionSupport = false;
-    diagnostics.tagSupport = { valueSet: [DiagnosticTag.Unnecessary, DiagnosticTag.Deprecated] };
+    diagnostics.tagSupport = {
+      valueSet: [DiagnosticTag.Unnecessary, DiagnosticTag.Deprecated],
+    };
     diagnostics.codeDescriptionSupport = true;
     diagnostics.dataSupport = true;
 
-    const windowCapabilities = ensure(result, 'window')!;
-    const showMessage = ensure(windowCapabilities, 'showMessage')!;
+    const windowCapabilities = ensure(result, "window")!;
+    const showMessage = ensure(windowCapabilities, "showMessage")!;
     showMessage.messageActionItem = { additionalPropertiesSupport: true };
-    const showDocument = ensure(windowCapabilities, 'showDocument')!;
+    const showDocument = ensure(windowCapabilities, "showDocument")!;
     showDocument.support = true;
 
-    const generalCapabilities = ensure(result, 'general')!;
+    const generalCapabilities = ensure(result, "general")!;
     generalCapabilities.staleRequestSupport = {
       cancel: true,
-      retryOnContentModified: Array.from(LanguageClient.RequestsToCancelOnContentModified),
+      retryOnContentModified: Array.from(
+        LanguageClient.RequestsToCancelOnContentModified
+      ),
     };
-    generalCapabilities.regularExpressions = { engine: 'ECMAScript', version: 'ES2020' };
+    generalCapabilities.regularExpressions = {
+      engine: "ECMAScript",
+      version: "ES2020",
+    };
     generalCapabilities.markdown = {
-      parser: 'marked',
-      version: '1.1.0',
+      parser: "marked",
+      version: "1.1.0",
     };
-    generalCapabilities.positionEncodings = ['utf-16'];
+    generalCapabilities.positionEncodings = ["utf-16"];
 
     // if (this._clientOptions.markdown.supportHtml) {
     // eslint-disable-next-line max-len
@@ -435,20 +647,65 @@ export class LanguageClient {
     return result;
   }
 
-  private async doInitialize(connection: ProtocolConnection, initParams: InitializeParams): Promise<InitializeResult> {
+  private initializeFeatures(_connection: ProtocolConnection) {
+    const documentSelector = this._clientOptions.documentSelector
+    for (const feature of this._features) {
+      feature.initialize(this._capabilities, documentSelector)
+    }
+  }
+
+  private handleRegistrationRequest(params: RegistrationParams) {
+    if (this._clientOptions.disableDynamicRegister) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      for (const registration of params.registrations) {
+        const feature = this._dynamicFeatures.get(registration.method);
+        if (!feature) {
+          reject(new Error(`No feature implementation for ${registration.method} found. Registration failed.`));
+          return;
+        }
+        const options = registration.registerOptions || {};
+        options.documentSelector = options.documentSelector || this._clientOptions.documentSelector;
+        // const data = {
+        //   id: registration.id,
+        //   registerOptions: options,
+        // }
+        // try {
+        //   feature.register(data)
+        // }
+        resolve()
+      }
+    });
+  }
+
+  private async doInitialize(
+    connection: ProtocolConnection,
+    initParams: InitializeParams
+  ): Promise<InitializeResult> {
+    // this.info(JSON.stringify(initParams));
+
     try {
+      logger.info(`[sendRequest] ${InitializeRequest.method}`, initParams)
       const result = await connection.sendRequest(InitializeRequest.type, initParams);
-      if (result.capabilities.positionEncoding !== undefined && result.capabilities.positionEncoding !== PositionEncodingKind.UTF16) {
-        throw new Error(`Unsupported position encoding (${result.capabilities.positionEncoding}) received from server ${this._name}`);
+      if (
+        result.capabilities.positionEncoding !== undefined &&
+        result.capabilities.positionEncoding !== PositionEncodingKind.UTF16
+      ) {
+        throw new Error(
+          `Unsupported position encoding (${result.capabilities.positionEncoding}) received from server ${this._name}`
+        );
       }
 
-      console.log('init resp ===>', result);
+      this.initializeFeatures(connection);
+      this.info("init resp ====> " + JSON.stringify(result));
       this._initializeResult = result;
       this.$state = ClientState.Running;
 
-      let textDocumentSyncOptions: TextDocumentSyncOptions | undefined = undefined;
+      let textDocumentSyncOptions: TextDocumentSyncOptions | undefined =
+        undefined;
       if (Is.number(result.capabilities.textDocumentSync)) {
-        if (result.capabilities.textDocumentSync === TextDocumentSyncKind.None) {
+        if (
+          result.capabilities.textDocumentSync === TextDocumentSyncKind.None
+        ) {
           textDocumentSyncOptions = {
             openClose: false,
             change: TextDocumentSyncKind.None,
@@ -463,49 +720,56 @@ export class LanguageClient {
             },
           };
         }
-      } else if (result.capabilities.textDocumentSync !== undefined && result.capabilities.textDocumentSync !== null) {
-        textDocumentSyncOptions = result.capabilities.textDocumentSync as TextDocumentSyncOptions;
+      } else if (
+        result.capabilities.textDocumentSync !== undefined &&
+        result.capabilities.textDocumentSync !== null
+      ) {
+        textDocumentSyncOptions = result.capabilities
+          .textDocumentSync as TextDocumentSyncOptions;
       }
-      this._capabilities = Object.assign({}, result.capabilities, { resolvedTextDocumentSync: textDocumentSyncOptions });
+      this._capabilities = Object.assign({}, result.capabilities, {
+        resolvedTextDocumentSync: textDocumentSyncOptions,
+      });
 
       await connection.sendNotification(InitializedNotification.type, {});
+      this.info(`[sendNotification] ${InitializedNotification.method}`);
 
       return result;
     } catch (error) {
-      this.error('Server initialization failed.', error);
+      if (error instanceof Error) {
+        message_emacs("error " + ' message ' + error.message + ' stack' + error.stack);
+      } else {
+        message_emacs("error1: " + JSON.stringify(error))
+      }
+      this.error("Server initialization failed.", error);
       void this.stop();
       throw error;
     }
   }
 
-  private async $start(): Promise<ProtocolConnection> {
-    if (this.$state === ClientState.StartFailed) {
-      throw new Error('Previous start failed. Can\'t restart server.');
-    }
-    await this.start();
-
-    const connection = this.activeConnection();
-    if (connection === undefined) {
-      throw new Error('Starting server failed');
-    }
-    return connection;
-  }
-
   private activeConnection(): ProtocolConnection | undefined {
-    return this.$state === ClientState.Running && this._connection !== undefined ? this._connection : undefined;
+    return this.$state === ClientState.Running && this._connection !== undefined
+      ? this._connection
+      : undefined;
   }
 
   public stop(timeout = 2000): Promise<void> {
-    return this.shutdown('stop', timeout).finally(() => {
+    return this.shutdown("stop", timeout).finally(() => {
       if (this._serverProcess) {
         this._serverProcess = undefined;
       }
     });
   }
 
-  private async shutdown(mode: 'suspend' | 'stop', timeout: number): Promise<void> {
+  private async shutdown(
+    mode: "suspend" | "stop",
+    timeout: number
+  ): Promise<void> {
     // If the client is stopped or in its initial state return.
-    if (this.$state === ClientState.Stopped || this.$state === ClientState.Initial) {
+    if (
+      this.$state === ClientState.Stopped ||
+      this.$state === ClientState.Initial
+    ) {
       return;
     }
 
@@ -514,7 +778,7 @@ export class LanguageClient {
       if (this._onStop !== undefined) {
         return this._onStop;
       } else {
-        throw new Error('Client is stopping but no stop promise available.');
+        throw new Error("Client is stopping but no stop promise available.");
       }
     }
 
@@ -523,13 +787,17 @@ export class LanguageClient {
     // We can't stop a client that is not running (e.g. has no connection). Especially not
     // on that us starting since it can't be correctly synchronized.
     if (connection === undefined || this.$state !== ClientState.Running) {
-      throw new Error(`Client is not running and can't be stopped. It's current state is: ${this.$state}`);
+      throw new Error(
+        `Client is not running and can't be stopped. It's current state is: ${this.$state}`
+      );
     }
 
     this._initializeResult = undefined;
     this.$state = ClientState.Stopping;
 
-    const tp = new Promise<undefined>(c => { RAL().timer.setTimeout(c, timeout); });
+    const tp = new Promise<undefined>((c) => {
+      RAL().timer.setTimeout(c, timeout);
+    });
     // eslint-disable-next-line @typescript-eslint/no-shadow
     const shutdown = (async (connection) => {
       await connection.sendRequest(ShutdownRequest.type, undefined);
@@ -538,27 +806,36 @@ export class LanguageClient {
     })(connection);
 
     // eslint-disable-next-line @typescript-eslint/no-shadow
-    return this._onStop = Promise.race([tp, shutdown]).then((connection) => {
-      // The connection won the race with the timeout.
-      if (connection !== undefined) {
-        connection.end();
-        connection.dispose();
-      } else {
-        this.error('Stopping server timed out');
-        throw new Error('Stopping the server timed out');
-      }
-    }, (error) => {
-      this.error('Stopping server failed', error);
-      throw error;
-    }).finally(() => {
-      this.$state = ClientState.Stopped;
-      this._onStart = undefined;
-      this._onStop = undefined;
-      this._connection = undefined;
-    });
+    return (this._onStop = Promise.race([tp, shutdown])
+      .then(
+        (connection) => {
+          // The connection won the race with the timeout.
+          if (connection !== undefined) {
+            connection.end();
+            connection.dispose();
+          } else {
+            this.error("Stopping server timed out");
+            throw new Error("Stopping the server timed out");
+          }
+        },
+        (error) => {
+          this.error("Stopping server failed", error);
+          throw error;
+        }
+      )
+      .finally(() => {
+        this.$state = ClientState.Stopped;
+        this._onStart = undefined;
+        this._onStop = undefined;
+        this._connection = undefined;
+      }));
   }
 
-  private createOnStartPromise(): [Promise<void>, () => void, (error: any) => void] {
+  private createOnStartPromise(): [
+    Promise<void>,
+    () => void,
+    (error: any) => void
+  ] {
     let resolve!: () => void;
     let reject!: (error: any) => void;
     const promise: Promise<void> = new Promise((_resolve, _reject) => {
@@ -571,20 +848,34 @@ export class LanguageClient {
   // TODO
   private async createConnection(): Promise<ProtocolConnection> {
     const errorHandler = () => {
-      //
+      message_emacs("errorHandler")
     };
 
     const closeHandler = () => {
       //
+      message_emacs('closeHandler')
     };
 
-    const transports = await this.createMessageTransports('utf8');
-    this._connection = createConnection(transports.reader, transports.writer, errorHandler, closeHandler, this._clientOptions.connectionOptions);
+    const transports = await this.createMessageTransports("utf8");
+    this._connection = createConnection(
+      transports.reader,
+      transports.writer,
+      errorHandler,
+      closeHandler,
+      this._clientOptions.connectionOptions
+    );
     return this._connection;
   }
 
   public async on(method: string, params: any) {
-    return (this._dynamicFeatures.get(method) as RunnableDynamicFeature<any, any, any, any>).run(params)
+    return (
+      this._dynamicFeatures.get(method) as RunnableDynamicFeature<
+        any,
+        any,
+        any,
+        any
+      >
+    ).run(params);
   }
 
   public async didChange(params: any) {
@@ -603,49 +894,74 @@ export class LanguageClient {
     return version;
   }
 
-  protected createMessageTransports(encoding: string): Promise<MessageTransports> {
-
+  protected createMessageTransports(
+    encoding: string
+  ): Promise<MessageTransports> {
     const server = this._serverOptions;
-    return this._getServerWorkingDir(server.options).then(serverWorkingDir => {
-      if (Executable.is(server) && server.command) {
-        const args: string[] = server.args !== undefined ? server.args.slice(0) : [];
-        let pipeName: string | undefined = undefined;
-        const transport = server.transport;
-        if (transport === TransportKind.stdio) {
-          args.push('--stdio');
-        } else if (transport === TransportKind.pipe) {
-          pipeName = generateRandomPipeName();
-          args.push(`--pipe=${pipeName}`);
-        } else if (Transport.isSocket(transport)) {
-          args.push(`--socket=${transport.port}`);
-        } else if (transport === TransportKind.ipc) {
-          throw new Error('Transport kind ipc is not support for command executable');
-        }
-        const options = Object.assign({}, server.options);
-        options.cwd = options.cwd || serverWorkingDir;
-        if (transport === undefined || transport === TransportKind.stdio) {
-          const serverProcess = spawn(server.command, args, options);
-          if (!serverProcess || !serverProcess.pid) {
-            return handleChildProcessStartError(serverProcess, `Launching server using command ${server.command} failed.`);
+    return this._getServerWorkingDir(server.options).then(
+      (serverWorkingDir) => {
+        if (Executable.is(server) && server.command) {
+          const args: string[] =
+            server.args !== undefined ? server.args.slice(0) : [];
+          let pipeName: string | undefined = undefined;
+          const transport = server.transport;
+          if (transport === TransportKind.stdio) {
+            args.push("--stdio");
+          } else if (transport === TransportKind.pipe) {
+            pipeName = generateRandomPipeName();
+            args.push(`--pipe=${pipeName}`);
+          } else if (Transport.isSocket(transport)) {
+            args.push(`--socket=${transport.port}`);
+          } else if (transport === TransportKind.ipc) {
+            throw new Error(
+              "Transport kind ipc is not support for command executable"
+            );
           }
-          serverProcess.stderr.on('data', data => console.error('server error: ', Is.string(data) ? data : data.toString(encoding)));
-          this._serverProcess = serverProcess;
-          return Promise.resolve({ reader: new StreamMessageReader(serverProcess.stdout), writer: new StreamMessageWriter(serverProcess.stdin) });
+          const options = Object.assign({}, server.options);
+          options.cwd = options.cwd || serverWorkingDir;
+          if (transport === undefined || transport === TransportKind.stdio) {
+            message_emacs(`server ${server.command} ${args.join(' ')} ${JSON.stringify(options)}`)
+            const serverProcess = spawn(server.command, args, options);
+            if (!serverProcess || !serverProcess.pid) {
+              return handleChildProcessStartError(
+                serverProcess,
+                `Launching server using command ${server.command} failed.`
+              );
+            }
+            serverProcess.stderr.on("data", (data) =>
+              console.error(
+                "server error: ",
+                Is.string(data) ? data : data.toString(encoding)
+              )
+            );
+            this._serverProcess = serverProcess;
+            return Promise.resolve({
+              reader: new StreamMessageReader(serverProcess.stdout),
+              writer: new StreamMessageWriter(serverProcess.stdin),
+            });
+          }
         }
+        return Promise.reject<MessageTransports>(
+          new Error(
+            "Unsupported server configuration " +
+              JSON.stringify(server, null, 4)
+          )
+        );
       }
-      return Promise.reject<MessageTransports>(new Error('Unsupported server configuration ' + JSON.stringify(server, null, 4)));
-    });
+    );
   }
 
   // TODO
-  private _getServerWorkingDir(options?: { cwd?: string }): Promise<string | undefined> {
+  private _getServerWorkingDir(options?: {
+    cwd?: string;
+  }): Promise<string | undefined> {
     let cwd = options && options.cwd;
     if (!cwd) {
       cwd = undefined;
     }
     if (cwd) {
       // make sure the folder exists otherwise creating the process will fail
-      return new Promise(s => {
+      return new Promise((s) => {
         fs.lstat(cwd!, (err, stats) => {
           s(!err && stats.isDirectory() ? cwd : undefined);
         });
@@ -657,13 +973,15 @@ export class LanguageClient {
   private data2String(data: object): string {
     if (data instanceof ResponseError) {
       const responseError = data as ResponseError<any>;
-      return `  Message: ${responseError.message}\n  Code: ${responseError.code} ${responseError.data ? '\n' + responseError.data.toString() : ''}`;
+      return `  Message: ${responseError.message}\n  Code: ${
+        responseError.code
+      } ${responseError.data ? "\n" + responseError.data.toString() : ""}`;
     }
     if (data instanceof Error) {
       if (Is.string(data.stack)) {
         return data.stack;
       }
-      return (data as Error).message;
+      return (data as Error).message ?? JSON.stringify(data);
     }
     if (Is.string(data)) {
       return data;
@@ -672,15 +990,30 @@ export class LanguageClient {
   }
 
   public info(message: string, data?: any): void {
-    console.info(`[Info  - ${(new Date().toLocaleTimeString())}] ${message || this.data2String(data)}`);
+    const msg = `[Info  - ${new Date().toLocaleTimeString()}] ${
+      message || this.data2String(data)
+    }`;
+    logger.info(msg)
+    // message_emacs(msg);
+    console.info(msg);
   }
 
   public warn(message: string, data?: any): void {
-    console.warn(`[Warn  - ${(new Date().toLocaleTimeString())}] ${message || this.data2String(data)}`);
+    const msg = `[Warn  - ${new Date().toLocaleTimeString()}] ${
+      message || this.data2String(data)
+    }`;
+    logger.info(msg)
+    // message_emacs(msg);
+    console.warn(msg);
   }
 
   public error(message: string, data?: any): void {
-    console.error(`[Error  - ${(new Date().toLocaleTimeString())}] ${message || this.data2String(data)}`);
+    const msg = `[Error  - ${new Date().toLocaleTimeString()}] ${
+      message || this.data2String(data)
+    }`;
+    logger.info(msg)
+    // message_emacs(msg);
+    console.error(msg);
   }
 
   private static RequestsToCancelOnContentModified: Set<string> = new Set([
@@ -688,5 +1021,4 @@ export class LanguageClient {
     SemanticTokensRangeRequest.method,
     SemanticTokensDeltaRequest.method,
   ]);
-
 }

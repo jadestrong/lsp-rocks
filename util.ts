@@ -3,6 +3,8 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
+import { MessageSignature } from "vscode-jsonrpc";
+
 export function boolean(value: any): value is boolean {
   return value === true || value === false;
 }
@@ -53,4 +55,8 @@ export function asPromise(value: any): Promise<any> {
   } else {
     return Promise.resolve(value);
   }
+}
+
+export function toMethod(type: string | MessageSignature) {
+  return string(type) ? type : type.method;
 }

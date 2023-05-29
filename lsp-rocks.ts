@@ -1,6 +1,8 @@
 import { LanguageClient } from './client';
-import { Server, WebSocket, WebSocketServer } from 'ws';
-import { randomUUID } from 'crypto';
+// import { Server, WebSocket, WebSocketServer } from 'ws';
+// import { randomUUID } from 'crypto';
+import { RPCServer } from 'ts-elrpc';
+import { init_epc_server, logger, message_emacs } from './epc-utils';
 
 /**
  * All supports request commands
@@ -53,9 +55,9 @@ function mkres(id: string | number, cmd: string, data: string[]) {
 }
 
 export class LspRocks {
-  private _server: Server;
+  private _server: RPCServer | null;
 
-  private _serverPort: number;
+  // private _serverPort: number;
 
   private _emacsVars: Map<string, any>;
 
@@ -63,32 +65,38 @@ export class LspRocks {
 
   readonly _recentRequests: Map<string, any>;
 
-  constructor(serverPort: number) {
-    this._serverPort = serverPort;
+  constructor() {
+    // this._serverPort = serverPort;
     this._clients = new Map();
     this._recentRequests = new Map();
   }
 
-  public start() {
-    this._server = new WebSocketServer({ port: this._serverPort })
-      .on('connection', async (ws: WebSocket) => {
-        ws.id = randomUUID();
+  public async start() {
+    this._server = await init_epc_server();
+    this._server?.defineMethod('message', async (message: Message) => {
+      this._recentRequests.set(message.cmd, message.id);
+      await this.messageHandler(message);
+    });
+    // this._server = new RPCServer()
+  //   this._server = new WebSocketServer({ port: this._serverPort })
+  //     .on('connection', async (ws: WebSocket) => {
+  //       ws.id = randomUUID();
 
-        ws.on('message', async (msg: string) => {
-          const message = JSON.parse(msg) as Message;
-          this._recentRequests.set(message.cmd, message.id);
-          await this.messageHandler(ws, message);
-        });
+  //       ws.on('message', async (msg: string) => {
+  //         const message = JSON.parse(msg) as Message;
+  //         this._recentRequests.set(message.cmd, message.id);
+  //         await this.messageHandler(ws, message);
+  //       });
 
-        ws.on('close', () => {
-          console.log('a connection closed');
-        });
-      });
+  //       ws.on('close', () => {
+  //         console.log('a connection closed');
+  //       });
+  //     });
   }
 
-  public async messageHandler(socket: WebSocket, msg: Message) {
+  public async messageHandler(msg: Message) {
     const { id, cmd } = msg;
-    console.log(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
+    logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
     const logLabel = `${id}:${cmd}`;
     console.time(logLabel)
     if (Message.isResponse(msg)) {
@@ -96,8 +104,9 @@ export class LspRocks {
     } else {
       const req = msg as RequestMessage;
       let data: any = null;
+      // TODO clientId
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const client = await this.ensureClient(socket.id!, req.params);
+      const client = await this.ensureClient('test', req.params);
 
       if (req.cmd == ServerCommand.Init) {
         return;
@@ -112,7 +121,8 @@ export class LspRocks {
       }
       console.timeLog(logLabel)
       if (data != null) {
-        socket.send(mkres(id, cmd, data));
+        message_emacs(mkres(id, cmd, data))
+        // socket.send(mkres(id, cmd, data));
       }
     }
 
@@ -130,11 +140,11 @@ export class LspRocks {
         this._clients.set(clientId, client);
         await client.start();
       } else {
+        message_emacs('Can not create LanguageClient, because language and project is undefined')
         throw new Error('Can not create LanguageClient, because language and project is undefined');
       }
     }
 
     return client;
   }
-
 }

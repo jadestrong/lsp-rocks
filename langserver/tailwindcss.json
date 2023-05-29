@@ -1,0 +1,26 @@
+{
+    "userLanguages": {
+        "eelixir": "html-eex",
+        "eruby": "erb"
+    },
+    "emmetCompletions": false,
+    "showPixelEquivalents": true,
+    "rootFontSize": 16,
+    "validate": true,
+    "hovers": true,
+    "suggestions": true,
+    "codeActions": true,
+    "lint": {
+        "invalidScreen": "error",
+        "invalidVariant": "error",
+        "invalidTailwindDirective": "error",
+        "invalidApply": "error",
+        "invalidConfigPath": "error",
+        "cssConflict": "warning",
+        "recommendedVariantOrder": "warning"
+    },
+    "experimental": {
+        "classRegex": ""
+    },
+    "classAttributes": ["class", "className", "ngClass"]
+}
