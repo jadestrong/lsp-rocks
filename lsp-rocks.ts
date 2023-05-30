@@ -2,7 +2,7 @@ import { LanguageClient } from './client';
 // import { Server, WebSocket, WebSocketServer } from 'ws';
 // import { randomUUID } from 'crypto';
 import { RPCServer } from 'ts-elrpc';
-import { init_epc_server, logger, message_emacs } from './epc-utils';
+import { eval_in_emacs, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 
 /**
  * All supports request commands
@@ -96,7 +96,7 @@ export class LspRocks {
 
   public async messageHandler(msg: Message) {
     const { id, cmd } = msg;
-    logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
+    // logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
     const logLabel = `${id}:${cmd}`;
     console.time(logLabel)
     if (Message.isResponse(msg)) {
@@ -121,7 +121,8 @@ export class LspRocks {
       }
       console.timeLog(logLabel)
       if (data != null) {
-        message_emacs(mkres(id, cmd, data))
+        send_response_to_emacs({id, cmd, data})
+        // message_emacs(mkres(id, cmd, data))
         // socket.send(mkres(id, cmd, data));
       }
     }

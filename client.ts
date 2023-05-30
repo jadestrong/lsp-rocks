@@ -86,7 +86,7 @@ import { HoverFeature } from "./features/hover";
 import { SignatureHelpFeature } from "./features/signatureHelp";
 import { PrepareRenameFeature, RenameFeature } from "./features/rename";
 import { logger, message_emacs } from "./epc-utils";
-import { ConfigurationFeature } from "./features/configurationFeature";
+import { ConfigurationFeature } from "./features/configuration";
 
 enum ClientState {
   Initial = "initial",
@@ -401,7 +401,7 @@ export class LanguageClient {
     }
     try {
       // await this.forceDocumentSync();
-      logger.info(`[sendRequest] ${Is.toMethod(type)}`, ...params)
+      // logger.info(`[sendRequest] ${Is.toMethod(type)}`, ...params)
       return await this._connection?.sendRequest<R>(Is.toMethod(type), ...params);
     } catch (error) {
       this.error(`Sending request ${Is.toMethod(type)} failed. ` + (error as Error).message);
@@ -543,7 +543,7 @@ export class LanguageClient {
   ): Promise<InitializeResult> {
     // May language server need some initialization options.
     const langSreverConfig = `./langserver/${this._language}.json`;
-    this.info("langageConfgi" + langSreverConfig);
+    // this.info("langageConfgi" + langSreverConfig);
     const initializationOptions = fs.existsSync(
       path.join(__dirname, langSreverConfig)
     )
@@ -709,7 +709,7 @@ export class LanguageClient {
     // this.info(JSON.stringify(initParams));
 
     try {
-      logger.info(`[sendRequest] ${InitializeRequest.method}`, initParams)
+      // logger.info(`[sendRequest] ${InitializeRequest.method}`, initParams)
       const result = await connection.sendRequest(InitializeRequest.type, initParams);
       if (
         result.capabilities.positionEncoding !== undefined &&
@@ -721,7 +721,7 @@ export class LanguageClient {
       }
 
       this.initializeFeatures(connection);
-      this.info("init resp ====> " + JSON.stringify(result));
+      // this.info("init resp ====> " + JSON.stringify(result));
       this._initializeResult = result;
       this.$state = ClientState.Running;
 

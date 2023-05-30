@@ -73,3 +73,12 @@ export const logger = {
     eval_in_emacs('lsp-rocks--log', ...args)
   },
 }
+
+interface Response {
+  id: string | number,
+  cmd: string,
+  data: any[]
+}
+export function send_response_to_emacs(resp: Response) {
+  eval_in_emacs("lsp-rocks--message-handler", resp)
+}

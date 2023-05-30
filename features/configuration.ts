@@ -3,7 +3,6 @@ import {
   ConfigurationRequest,
 } from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
-import { logger } from "../epc-utils";
 import { RunnableDynamicFeature } from "./features";
 
 export class ConfigurationFeature extends RunnableDynamicFeature<
