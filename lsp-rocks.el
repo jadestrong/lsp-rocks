@@ -271,6 +271,23 @@ Setting this to nil or 0 will turn off the indicator."
         (list 'tsx-ts-mode (list :name "tailwindcss" :command "tailwindcss-language-server" :args (list "--stdio")))
         ))
 
+(defvar lsp-rocks-language-id-map
+      '((".vue" . "vue")
+        (".tsx" . "typescriptreact")
+        (".ts" . "typescript")
+        (".jsx" . "javascriptreact")
+        (".js" . "javascript")
+        (".html" . "html")
+        (".css" . "css")
+        (".json" . "json")
+        (".less" . "less")
+        (".rs" . "rust")))
+
+(defun lsp-rocks-get-language-for-file ()
+  "Get the language for the current file based on its extension."
+  (let ((extension (file-name-extension buffer-file-name)))
+    (cdr (assoc (concat "." extension) lsp-rocks-language-id-map))))
+
 (defvar-local lsp-rocks--before-change-begin-pos nil)
 
 (defvar-local lsp-rocks--before-change-end-pos nil)
@@ -352,7 +369,6 @@ This set of allowed chars is enough for hexifying local file paths.")
   "Get language corresponding current buffer."
   (cl-some (lambda (it)
              (let ((mode-or-pattern (car it)))
-               (message "mode-or-pattern %s %s" mode-or-pattern (stringp mode-or-pattern))
                (cond
                 ((and (stringp mode-or-pattern)
                       (s-matches? mode-or-pattern (buffer-file-name))) (cadr it))
@@ -534,7 +550,6 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
 Completions works for proper absolute and relative files paths.
 File paths with spaces are only supported inside strings."
   (interactive (list 'interactive))
-  (message "command %s" command)
   (cl-case command
     (interactive (company-begin-backend 'company-lsp-rocks))
     (prefix (lsp-rocks--completion-prefix))
@@ -558,7 +573,7 @@ File paths with spaces are only supported inside strings."
   (lsp-rocks--request "textDocument/didOpen"
                       (list :textDocument
                             (list :uri (lsp-rocks--buffer-uri)
-                                  :languageId (string-replace "-mode" "" (symbol-name major-mode))
+                                  :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
                                   :version 0
                                   :text (buffer-substring-no-properties (point-min) (point-max))))))
 

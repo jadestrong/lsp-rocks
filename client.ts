@@ -425,7 +425,7 @@ export class LanguageClient {
     try {
       return this._connection?.onRequest(Is.toMethod(type), (...params) => {
         logger.info(`[onRequest] ${Is.toMethod(type)}`, ...params)
-        handler.call(null, ...params)
+        return handler.call(null, ...params)
       })
     } catch (error) {
       this.error(

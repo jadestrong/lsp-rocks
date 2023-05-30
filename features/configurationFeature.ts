@@ -22,8 +22,7 @@ export class ConfigurationFeature extends RunnableDynamicFeature<
 
   public initialize() {
     this.client.onRequest(ConfigurationRequest.type, () => {
-      logger.info(`[Sending response] ${ConfigurationRequest.method}`, JSON.stringify(this.client._initializationOptions))
-      return this.client._initializationOptions;
+      return [this.client._initializationOptions]
     })
   }
 
