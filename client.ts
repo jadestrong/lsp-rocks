@@ -237,16 +237,12 @@ const myConsole = {
 
 function logTrace(message: string, data?: any) {
   const msg = `[Trace - ${(new Date().toLocaleTimeString())}] ${message}`;
-  logger.info(msg);
-  if (data) {
-    logger.info(JSON.stringify(data));
-  }
+  logger.info(msg, data ? JSON.stringify(data) : undefined);
 }
 
 function logObjectTrace(data: any) {
   if (data) {
-    logger.info(`[Trace - ${(new Date().toLocaleTimeString())}] `)
-    logger.info(JSON.stringify(data));
+    logger.info(`[Trace - ${(new Date().toLocaleTimeString())}] `, JSON.stringify(data))
   }
 }
 
@@ -424,7 +420,7 @@ export class LanguageClient {
     }
     try {
       return this._connection?.onRequest(Is.toMethod(type), (...params) => {
-        logger.info(`[onRequest] ${Is.toMethod(type)}`, ...params)
+        // logger.info(`[onRequest] ${Is.toMethod(type)}`, ...params)
         return handler.call(null, ...params)
       })
     } catch (error) {
@@ -467,7 +463,7 @@ export class LanguageClient {
       );
     }
     try {
-      logger.info(`[sendNotification] ${Is.toMethod(type)}`, params)
+      // logger.info(`[sendNotification] ${Is.toMethod(type)}`, params)
       return await this._connection?.sendNotification(Is.toMethod(type), params);
     } catch (error) {
       this.error(

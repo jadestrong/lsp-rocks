@@ -132,7 +132,7 @@
   (with-current-buffer (get-buffer-create lsp-rocks-name)
     (goto-char (point-max))
     (dolist (param params)
-      (insert (concat (prin1-to-string param) "\n")))
+      (insert (concat (if (string-match-p "^\"" param) (read param) param) "\n")))
     (insert "\n")))
 
 (defun lsp-rocks-call-async (method &rest args)

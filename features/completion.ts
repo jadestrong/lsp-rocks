@@ -44,12 +44,15 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
     };
   }
 
+  // TODO 当前行的文本，当前鼠标所在的位置，当前的行
+  // 根据这些计算 prefix 和 triggerChar
+  // 另外支持的 triggerChar 需要根据 server 返回的配置来整合获取
   public async runWith(params: EmacsCompletionParams) {
     labelCompletionMap.clear();
-    const { prefix } = params as EmacsCompletionParams;
+    const { prefix } = params;
 
     const resp = await this.client.sendRequest(CompletionRequest.type, params);
-    message_emacs('completion resp' + JSON.stringify(resp))
+    // message_emacs('completion resp' + JSON.stringify(resp))
     if (resp == null) return [];
 
     // TODO

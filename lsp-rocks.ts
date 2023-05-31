@@ -1,8 +1,6 @@
 import { LanguageClient } from './client';
-// import { Server, WebSocket, WebSocketServer } from 'ws';
-// import { randomUUID } from 'crypto';
 import { RPCServer } from 'ts-elrpc';
-import { eval_in_emacs, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
+import { init_epc_server, message_emacs, send_response_to_emacs } from './epc-utils';
 
 /**
  * All supports request commands
