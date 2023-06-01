@@ -65,10 +65,11 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
     const { registeredServerCapabilities } = this.client;
     const { registerOptions } = registeredServerCapabilities.get('textDocument/completion') ?? {}
     const { triggerCharacters } = registerOptions as CompletionRegistrationOptions ?? {}
-    const { prefix, line, column, textDocument, position } = params;
+    const { line, column, textDocument, position } = params;
 
     const pretext = byteSlice(line, 0, column);
     const triggerCharacter = findTriggerCharacter(pretext, triggerCharacters)
+    message_emacs(`pretext ${pretext} ${triggerCharacters?.join(' ')}`)
     const completionParams: CompletionParams = {
       textDocument,
       position,
@@ -78,7 +79,9 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       }
     }
 
-    message_emacs('complete: ' + pretext + ' triggerChar ' + triggerCharacter + ' chars ' + triggerCharacters?.join(' '))
+    const prefix = triggerCharacter ? '' : byteSlice(pretext, Math.max(...[...(triggerCharacters ?? []), ' '].map(char => pretext.lastIndexOf(char))), pretext.length).trim()
+
+    message_emacs(`prefix ${prefix} ${triggerCharacter}`)
 
     const resp = await this.client.sendRequest(CompletionRequest.type, completionParams);
     // message_emacs('completion resp' + JSON.stringify(resp))
@@ -89,7 +92,9 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       return [];
     }
 
-    const completions = resp.items.filter(it => it.label.startsWith(prefix))
+    const completions = resp
+      .items
+      .filter(it => (it.filterText ?? it.label).startsWith(prefix))
       .slice(0, this.max_completion_size)
       .sort((a, b) => {
         if (a.sortText != undefined && b.sortText != undefined) {
