@@ -43,6 +43,7 @@ import {
   RegistrationParams,
   RegistrationRequest,
   Trace,
+  Registration,
 } from "vscode-languageserver-protocol";
 
 import {
@@ -312,6 +313,8 @@ export class LanguageClient {
   private _initializeResult: InitializeResult | undefined;
 
   private _capabilities!: ServerCapabilities;
+  // 记录 client/registerCapability 返回注册的能力
+  registeredServerCapabilities = new Map<Registration['method'], Registration>();
 
   private _clientOptions: ResolvedClientOptions;
 
@@ -676,26 +679,41 @@ export class LanguageClient {
   }
 
   private handleRegistrationRequest(params: RegistrationParams) {
-    if (this._clientOptions.disableDynamicRegister) return Promise.resolve();
-    return new Promise<void>((resolve, reject) => {
-      for (const registration of params.registrations) {
-        const feature = this._dynamicFeatures.get(registration.method);
-        if (!feature) {
-          reject(new Error(`No feature implementation for ${registration.method} found. Registration failed.`));
-          return;
-        }
-        const options = registration.registerOptions || {};
-        options.documentSelector = options.documentSelector || this._clientOptions.documentSelector;
-        // const data = {
-        //   id: registration.id,
-        //   registerOptions: options,
-        // }
-        // try {
-        //   feature.register(data)
-        // }
-        resolve()
+    for (const registration of params.registrations) {
+      const feature = this._dynamicFeatures.get(registration.method);
+      if (!feature) {
+        this.error(`No feature implementation for ${registration.method}`);
+        // return;
       }
-    });
+      // const options = registration.registerOptions ?? {};
+      // options.documentSelector = options.documentSelector || this._clientOptions.documentSelector;
+      // const data = {
+      //   id: registration.id,
+      //   registerOptions: options,
+      // };
+      logger.info(`register ${registration.method}`, JSON.stringify(registration))
+      this.registeredServerCapabilities.set(registration.method, registration);
+    }
+    // if (this._clientOptions.disableDynamicRegister) return Promise.resolve();
+    // return new Promise<void>((resolve, reject) => {
+    //   for (const registration of params.registrations) {
+    //     const feature = this._dynamicFeatures.get(registration.method);
+    //     if (!feature) {
+    //       reject(new Error(`No feature implementation for ${registration.method} found. Registration failed.`));
+    //       return;
+    //     }
+    //     const options = registration.registerOptions || {};
+    //     options.documentSelector = options.documentSelector || this._clientOptions.documentSelector;
+    //     const data = {
+    //       id: registration.id,
+    //       registerOptions: options,
+    //     }
+    //     try {
+    //       feature.register(data)
+    //     }
+    //     // resolve()
+    //   }
+    // });
   }
 
   private async doInitialize(
@@ -753,7 +771,7 @@ export class LanguageClient {
       });
 
       await connection.sendNotification(InitializedNotification.type, {});
-      this.info(`[sendNotification] ${InitializedNotification.method}`);
+      // this.info(`[sendNotification] ${InitializedNotification.method}`);
 
       return result;
     } catch (error) {

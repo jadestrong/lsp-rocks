@@ -1,10 +1,23 @@
-import { ClientCapabilities, CompletionItem, CompletionItemTag, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, InsertTextMode, MarkupKind, RegistrationType } from "vscode-languageserver-protocol";
+import { ClientCapabilities, CompletionItem, CompletionItemTag, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, CompletionTriggerKind, InsertTextMode, MarkupKind, RegistrationType} from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
 import { message_emacs } from "../epc-utils";
+import { byteSlice } from "../utils/string";
 import { RunnableDynamicFeature, ensure } from "./features";
 
 export interface EmacsCompletionParams extends CompletionParams {
   prefix: string;
+  /* 当前输入所在行的文本 */
+  line: string;
+  /** 当前输入时光标所在的列 */
+  column: number;
+}
+
+// export interface CompletionRegistrationOptions extends TextDocumentRegistrationOptions, CompletionOptions {}
+
+const findTriggerCharacter = (pretext: string, triggerCharacters: string[] | undefined) => {
+  return triggerCharacters?.find(triggerCharacter => {
+    return pretext.endsWith(triggerCharacter);
+  });
 }
 
 /**
@@ -46,12 +59,28 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
 
   // TODO 当前行的文本，当前鼠标所在的位置，当前的行
   // 根据这些计算 prefix 和 triggerChar
-  // 另外支持的 triggerChar 需要根据 server 返回的配置来整合获取
+  // 另外支持的 triggerChar 需要根据 server 返回的配置来整合获取，从 client 上取 server 下发的 trigger 么？
   public async runWith(params: EmacsCompletionParams) {
     labelCompletionMap.clear();
-    const { prefix } = params;
+    const { registeredServerCapabilities } = this.client;
+    const { registerOptions } = registeredServerCapabilities.get('textDocument/completion') ?? {}
+    const { triggerCharacters } = registerOptions as CompletionRegistrationOptions ?? {}
+    const { prefix, line, column, textDocument, position } = params;
 
-    const resp = await this.client.sendRequest(CompletionRequest.type, params);
+    const pretext = byteSlice(line, 0, column);
+    const triggerCharacter = findTriggerCharacter(pretext, triggerCharacters)
+    const completionParams: CompletionParams = {
+      textDocument,
+      position,
+      context: {
+        triggerKind: triggerCharacter ? CompletionTriggerKind.TriggerCharacter : CompletionTriggerKind.Invoked,
+        triggerCharacter,
+      }
+    }
+
+    message_emacs('complete: ' + pretext + ' triggerChar ' + triggerCharacter + ' chars ' + triggerCharacters?.join(' '))
+
+    const resp = await this.client.sendRequest(CompletionRequest.type, completionParams);
     // message_emacs('completion resp' + JSON.stringify(resp))
     if (resp == null) return [];
 

@@ -613,6 +613,8 @@ File paths with spaces are only supported inside strings."
   (set-text-properties 0 (length prefix) nil prefix)
   (append `(:prefix
             ,prefix
+            :line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
+            :column ,(current-column)
             :context ,(if (member prefix lsp-rocks--trigger-characters)
                           `(:triggerKind 2 :triggerCharacter ,prefix)
                         '(:triggerKind 1)))

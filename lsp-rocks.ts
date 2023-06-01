@@ -1,6 +1,6 @@
 import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
-import { init_epc_server, message_emacs, send_response_to_emacs } from './epc-utils';
+import { init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 
 /**
  * All supports request commands
@@ -94,7 +94,7 @@ export class LspRocks {
 
   public async messageHandler(msg: Message) {
     const { id, cmd } = msg;
-    // logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
+    logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
     const logLabel = `${id}:${cmd}`;
     console.time(logLabel)
     if (Message.isResponse(msg)) {
