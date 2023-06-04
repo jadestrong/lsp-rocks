@@ -55,8 +55,6 @@ function mkres(id: string | number, cmd: string, data: string[]) {
 export class LspRocks {
   private _server: RPCServer | null;
 
-  // private _serverPort: number;
-
   private _emacsVars: Map<string, any>;
 
   readonly _clients: Map<string, LanguageClient>;
@@ -64,7 +62,6 @@ export class LspRocks {
   readonly _recentRequests: Map<string, any>;
 
   constructor() {
-    // this._serverPort = serverPort;
     this._clients = new Map();
     this._recentRequests = new Map();
   }
@@ -73,23 +70,17 @@ export class LspRocks {
     this._server = await init_epc_server();
     this._server?.defineMethod('message', async (message: Message) => {
       this._recentRequests.set(message.cmd, message.id);
-      await this.messageHandler(message);
+      const response = await this.messageHandler(message);
+      if (response?.data != null) {
+        send_response_to_emacs(response)
+      }
     });
-    // this._server = new RPCServer()
-  //   this._server = new WebSocketServer({ port: this._serverPort })
-  //     .on('connection', async (ws: WebSocket) => {
-  //       ws.id = randomUUID();
 
-  //       ws.on('message', async (msg: string) => {
-  //         const message = JSON.parse(msg) as Message;
-  //         this._recentRequests.set(message.cmd, message.id);
-  //         await this.messageHandler(ws, message);
-  //       });
-
-  //       ws.on('close', () => {
-  //         console.log('a connection closed');
-  //       });
-  //     });
+    this._server?.defineMethod('sync', async (message: Message) => {
+      this._recentRequests.set(message.cmd, message.id);
+      const response = await this.messageHandler(message);
+      return response?.data
+    })
   }
 
   public async messageHandler(msg: Message) {
@@ -99,6 +90,7 @@ export class LspRocks {
     console.time(logLabel)
     if (Message.isResponse(msg)) {
       // TODO
+      message_emacs('get response' + JSON.stringify(msg))
     } else {
       const req = msg as RequestMessage;
       let data: any = null;
@@ -118,11 +110,11 @@ export class LspRocks {
         return;
       }
       console.timeLog(logLabel)
-      if (data != null) {
-        send_response_to_emacs({id, cmd, data})
-        // message_emacs(mkres(id, cmd, data))
-        // socket.send(mkres(id, cmd, data));
-      }
+      return {
+        id,
+        cmd,
+        data
+      };
     }
 
   }

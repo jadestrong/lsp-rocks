@@ -259,6 +259,7 @@ function createConnection(
     errorHandler(data[0], data[1], data[2]);
   });
   connection.onClose(closeHandler);
+
   connection.trace(Trace.Verbose, {
     log(messageOrDataObject: string | any, data?: string) {
       if (Is.string(messageOrDataObject)) {
@@ -266,7 +267,6 @@ function createConnection(
       } else {
         logObjectTrace(messageOrDataObject)
       }
-      // message_emacs('here' + JSON.stringify(messageOrDataObject) + JSON.stringify(data))
     }
   })
   return connection;
@@ -542,7 +542,6 @@ export class LanguageClient {
   ): Promise<InitializeResult> {
     // May language server need some initialization options.
     const langSreverConfig = `./langserver/${this._language}.json`;
-    // this.info("langageConfgi" + langSreverConfig);
     const initializationOptions = fs.existsSync(
       path.join(__dirname, langSreverConfig)
     )
@@ -659,11 +658,6 @@ export class LanguageClient {
     };
     generalCapabilities.positionEncodings = ["utf-16"];
 
-    // if (this._clientOptions.markdown.supportHtml) {
-    // eslint-disable-next-line max-len
-    // 	generalCapabilities.markdown.allowedTags = ['ul', 'li', 'p', 'code', 'blockquote', 'ol', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'em', 'pre', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'del', 'a', 'strong', 'br', 'img', 'span'];
-    // }
-
     for (const feature of this._features) {
       feature.fillClientCapabilities(result);
     }
@@ -683,47 +677,18 @@ export class LanguageClient {
       const feature = this._dynamicFeatures.get(registration.method);
       if (!feature) {
         this.error(`No feature implementation for ${registration.method}`);
-        // return;
       }
-      // const options = registration.registerOptions ?? {};
-      // options.documentSelector = options.documentSelector || this._clientOptions.documentSelector;
-      // const data = {
-      //   id: registration.id,
-      //   registerOptions: options,
-      // };
       logger.info(`register ${registration.method}`, JSON.stringify(registration))
       this.registeredServerCapabilities.set(registration.method, registration);
     }
-    // if (this._clientOptions.disableDynamicRegister) return Promise.resolve();
-    // return new Promise<void>((resolve, reject) => {
-    //   for (const registration of params.registrations) {
-    //     const feature = this._dynamicFeatures.get(registration.method);
-    //     if (!feature) {
-    //       reject(new Error(`No feature implementation for ${registration.method} found. Registration failed.`));
-    //       return;
-    //     }
-    //     const options = registration.registerOptions || {};
-    //     options.documentSelector = options.documentSelector || this._clientOptions.documentSelector;
-    //     const data = {
-    //       id: registration.id,
-    //       registerOptions: options,
-    //     }
-    //     try {
-    //       feature.register(data)
-    //     }
-    //     // resolve()
-    //   }
-    // });
   }
 
   private async doInitialize(
     connection: ProtocolConnection,
     initParams: InitializeParams
   ): Promise<InitializeResult> {
-    // this.info(JSON.stringify(initParams));
 
     try {
-      // logger.info(`[sendRequest] ${InitializeRequest.method}`, initParams)
       const result = await connection.sendRequest(InitializeRequest.type, initParams);
       if (
         result.capabilities.positionEncoding !== undefined &&
@@ -735,7 +700,6 @@ export class LanguageClient {
       }
 
       this.initializeFeatures(connection);
-      // this.info("init resp ====> " + JSON.stringify(result));
       this._initializeResult = result;
       this.$state = ClientState.Running;
 
@@ -1033,8 +997,6 @@ export class LanguageClient {
       message || this.data2String(data)
     }`;
     logger.info(msg)
-    // message_emacs(msg);
-    console.info(msg);
   }
 
   public warn(message: string, data?: any): void {
@@ -1042,8 +1004,6 @@ export class LanguageClient {
       message || this.data2String(data)
     }`;
     logger.info(msg)
-    // message_emacs(msg);
-    console.warn(msg);
   }
 
   public error(message: string, data?: any): void {
@@ -1051,8 +1011,6 @@ export class LanguageClient {
       message || this.data2String(data)
     }`;
     logger.info(msg)
-    // message_emacs(msg);
-    console.error(msg);
   }
 
   private static RequestsToCancelOnContentModified: Set<string> = new Set([

@@ -81,11 +81,7 @@
   "Get VARS and return values."
   (mapcar #'lsp-rocks--get-emacs-var-func vars))
 
-;; (defvar lsp-rocks-epc-process nil)
-
 (defvar lsp-rocks-internal-process nil)
-;; (defvar lsp-rocks-internal-process-prog nil)
-;; (defvar lsp-rocks-internal-process-args nil)
 
 (defcustom lsp-rocks-name "*lsp-rocks*"
   "Name of LSP-ROCKS buffer."
@@ -145,6 +141,10 @@
     (setq lsp-rocks-first-call-args args)
     (lsp-rocks-start-process)))
 
+(defun lsp-rocks-call-sync (method &rest args)
+  "Call NODE EPC function METHOD and ARGS synchronously."
+  (epc:call-sync lsp-rocks-process (read method) args))
+
 (defun lsp-rocks-restart-process ()
   "Stop and restart LSP-ROCKS process."
   (interactive)
@@ -160,16 +160,7 @@
   (unless (epc:live-p lsp-rocks-process)
     (lsp-rocks--start-epc)
     (message "[LSP-ROCKS] EPC Server started successly.")
-    (setq lsp-rocks-is-starting nil)
-    ;; (when (and lsp-rocks-first-call-method
-    ;;            lsp-rocks-first-call-args)
-    ;;   (deferred:$
-    ;;    (epc:call-deferred lsp-rocks-process
-    ;;                       (read lsp-rocks-first-call-method)
-    ;;                       lsp-rocks-first-call-args)
-    ;;    (setq lsp-rocks-first-call-method nil)
-    ;;    (setq lsp-rocks-first-call-args nil)))
-    ))
+    (setq lsp-rocks-is-starting nil)))
 
 (defvar lsp-rocks-stop-process-hook nil)
 
@@ -272,16 +263,16 @@ Setting this to nil or 0 will turn off the indicator."
         ))
 
 (defvar lsp-rocks-language-id-map
-      '((".vue" . "vue")
-        (".tsx" . "typescriptreact")
-        (".ts" . "typescript")
-        (".jsx" . "javascriptreact")
-        (".js" . "javascript")
-        (".html" . "html")
-        (".css" . "css")
-        (".json" . "json")
-        (".less" . "less")
-        (".rs" . "rust")))
+  '((".vue" . "vue")
+    (".tsx" . "typescriptreact")
+    (".ts" . "typescript")
+    (".jsx" . "javascriptreact")
+    (".js" . "javascript")
+    (".html" . "html")
+    (".css" . "css")
+    (".json" . "json")
+    (".less" . "less")
+    (".rs" . "rust")))
 
 (defun lsp-rocks-get-language-for-file ()
   "Get the language for the current file based on its extension."
@@ -335,21 +326,6 @@ Setting this to nil or 0 will turn off the indicator."
          (car (with-no-warnings
                 (project-roots project))))))
    default-directory))
-
-;; (defun lsp-rocks--websocket-client-key ()
-;;   "Make websocket client hashtable key."
-;;   (format "%s:%s" (lsp-rocks--suggest-project-root) (string-replace "-mode" "" (symbol-name major-mode))))
-
-;; (defun lsp-rocks--save-websocket-client (client)
-;;   "Put the websocket CLIENT to `lsp-rocks--websocket-clients'."
-;;   (puthash
-;;    (lsp-rocks--websocket-client-key)
-;;    client
-;;    lsp-rocks--websocket-clients))
-
-;; (defun lsp-rocks--get-websocket-client ()
-;;   "Get current websocket client from `lsp-rocks--websocket-clients'."
-;;   (gethash (lsp-rocks--websocket-client-key) lsp-rocks--websocket-clients))
 
 (defun lsp-rocks--buffer-uri ()
   "Return URI of the current buffer."
@@ -409,73 +385,6 @@ This set of allowed chars is enough for hexifying local file paths.")
         ("textDocument/prepareRename" (lsp-rocks--process-prepare-rename data))
         ("textDocument/rename" (lsp-rocks--process-rename data))
         ))))
-
-;; (defun lsp-rocks--create-websocket-client (url)
-;;   "Create a websocket client that connects to URL."
-;;   (websocket-open
-;;    url
-;;    :on-open
-;;    #'lsp-rocks--websocket-on-open-handler
-;;    :on-message
-;;    #'lsp-rocks--websocket-message-handler
-;;    :on-error (lambda (ws type err)
-;;                (message "error occured: %s" err))
-;;    :on-close (lambda (ws)
-;;                (message "connection closed"))))
-
-;; (defun lsp-rocks--get-free-port ()
-;;   (save-excursion
-;;     (let* ((process-buffer "*lsp-rocks-temp*")
-;;            (process (make-network-process
-;;                      :name process-buffer
-;;                      :buffer process-buffer
-;;                      :family 'ipv4
-;;                      :server t
-;;                      :host "127.0.0.1"
-;;                      :service t))
-;;            process-info)
-;;       (setq process-info (process-contact process))
-;;       (delete-process process)
-;;       (kill-buffer process-buffer)
-;;       (format "%s" (cadr process-info)))))
-
-;; (defun lsp-rocks-restart ()
-;;   "Restart."
-;;   (lsp-rocks-shutdown)
-;;   (lsp-rocks--start-server)
-;;   (message "[LSP-Rocks] Server restarted."))
-
-;; (defun lsp-rocks--start-server ()
-;;   "Start the server."
-;;   (unless lsp-rocks--server-port
-;;     (setq lsp-rocks--server-port (lsp-rocks--get-free-port)))
-;;   (setq lsp-rocks--server-process
-;;         (start-process-shell-command
-;;          lsp-rocks-name
-;;          lsp-rocks-name
-;;          (concat lsp-rocks-server-bin " " lsp-rocks--server-port))))
-
-;; (defun lsp-rocks-shutdown ()
-;;   "Shutdown LSP Rocks Server and reset all variables."
-;;   (interactive)
-;;   (lsp-rocks--kill-server-process)
-;;   (setq lsp-rocks-mode nil))
-
-;; (defun lsp-rocks--kill-server-process ()
-;;   "Kill LSP-Rocks server process."
-;;   (when (get-buffer lsp-rocks-name)
-;;     (dolist (client (hash-table-values lsp-rocks--websocket-clients))
-;;       (when (eq (websocket-ready-state client) 'open)
-;;         (websocket-close client)))
-;;     (when (process-live-p lsp-rocks--server-process)
-;;       (kill-process lsp-rocks--server-process))
-;;     (kill-buffer lsp-rocks-name)
-;;     (setq lsp-rocks--server-process nil
-;;           lsp-rocks--server-port nil
-;;           lsp-rocks--websocket-clients (clrhash lsp-rocks--websocket-clients)))
-;;   (message "[LSP-Rocks] Server terminated."))
-
-;; (add-hook 'kill-emacs-hook #'lsp-rocks--kill-server-process)
 
 (defconst lsp-rocks--trigger-characters
   '("." "\"" "'" "/" "@" "<"))
@@ -560,15 +469,12 @@ File paths with spaces are only supported inside strings."
     (no-cache t)
     (sorted t)
     (annotation (format " (%s)" (lsp-rocks--candidate-kind arg)))
+    (doc-buffer (lsp-rocks--doc-buffer arg))
+    (quickhelp-string (lsp-rocks--doc-buffer arg))
     (meta (get-text-property 0 'detail arg))
     (post-completion (lsp-rocks--company-post-completion arg))))
 
-(defun lsp-rocks--company-set-selection-advice (&rest args)
-  (when-let (label (nth (car args) company-candidates))
-    (lsp-rocks--resolve label)))
-(advice-add 'company-set-selection :after #'lsp-rocks--company-set-selection-advice)
-
-;;; websocket request functions
+;;; request functions
 (defun lsp-rocks--did-open ()
   (lsp-rocks--request "textDocument/didOpen"
                       (list :textDocument
@@ -624,6 +530,10 @@ File paths with spaces are only supported inside strings."
   (lsp-rocks--request "completionItem/resolve"
                       (list :label label)))
 
+(defun lsp-rocks--sync-resolve (label)
+  (lsp-rocks--sync "completionItem/resolve"
+                      (list :label label)))
+
 (defun lsp-rocks-find-definition ()
   "Find definition."
   (interactive)
@@ -676,6 +586,21 @@ File paths with spaces are only supported inside strings."
 (defun lsp-rocks--prepare-rename ()
   "Rename symbols."
   (lsp-rocks--request "textDocument/prepareRename" (lsp-rocks--TextDocumentPosition)))
+
+;;;;;;;; sync request
+(defun lsp-rocks--doc-buffer (item)
+  "Get ITEM doc."
+  (unless (get-text-property 0 'resolved-item item)
+    (let* ((resolved-item (lsp-rocks--sync-resolve (read item))))
+      (put-text-property 0 (length item) 'resolved-item resolved-item item)))
+  (when-let* ((resolved-item (get-text-property 0 'resolved-item item))
+              (documentation (plist-get resolved-item :documentation))
+              (formatted (lsp-rocks--format-markup documentation)))
+    (with-current-buffer (get-buffer-create "*lsp-rocks-doc*")
+      (erase-buffer)
+      (insert formatted)
+      (current-buffer))))
+
 
 (defvar-local lsp-rocks--prepare-result nil
   "Result of `lsp-rocks--prepare-rename'.")
@@ -807,10 +732,38 @@ Doubles as an indicator of snippet support."
        (symbol-value 'yas-minor-mode)
        'yas-expand-snippet))
 
+(defun lsp-rocks--format-markup (markup)
+  "Format MARKUP according to LSP's spec."
+  (pcase-let ((`(,string ,mode)
+               (if (stringp markup) (list markup 'gfm-view-mode)
+                 (list (plist-get markup :value)
+                       (pcase (plist-get markup :kind)
+                         ("markdown" 'gfm-view-mode)
+                         ("plaintext" 'text-mode)
+                         (_ major-mode))))))
+    (with-temp-buffer
+      (setq-local markdown-fontify-code-blocks-natively t)
+      (insert string)
+      (let ((inhibit-message t)
+            (message-log-max nil))
+        (ignore-errors (delay-mode-hooks (funcall mode))))
+      (font-lock-ensure)
+      (string-trim (buffer-string)))))
+
 (defun lsp-rocks--process-completion-resolve (item)
   "Process LSP resolved completion ITEM."
   (let ((candidate (nth company-selection company-candidates)))
-    (put-text-property 0 1 'resolved-item item candidate)))
+    (put-text-property 0 1 'resolved-item item candidate)
+    (when-let* ((document (plist-get item :documentation))
+                (formatted-doc (lsp-rocks--format-markup document)))
+      (with-current-buffer (get-buffer-create "*lsp-rocks-doc*")
+        (erase-buffer)
+        (insert formatted-doc)
+        (lsp-rocks--markdown-render))
+      (company--electric-do
+        (setq other-window-scroll-buffer (get-buffer "*lsp-rocks-doc*"))
+        (let ((win (display-buffer (get-buffer "*lsp-rocks-doc*") t)))
+          (set-window-start win (point-min)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; xref integration ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun lsp-rocks--xref-backend () "lsp-rocks xref backend." 'xref-lsp-rocks)
@@ -1013,20 +966,20 @@ Doubles as an indicator of snippet support."
   (json-serialize object :null-object nil))
 
 (defun lsp-rocks--request (cmd &optional params)
-  "Send a websocket message with given CMD and PARAMS."
+  "Send a message with given CMD and PARAMS."
   (when-let ((id (lsp-rocks--request-id)))
     (puthash cmd id lsp-rocks--recent-requests)
-    (lsp-rocks-call-async "message" (list :id id :cmd cmd :params params)))
-  )
+    (lsp-rocks-call-async "message" (list :id id :cmd cmd :params params))))
+
+(defun lsp-rocks--sync (cmd &optional params)
+  "Send a message with given CMD and PARAMS synchronously."
+  (when-let ((id (lsp-rocks--request-id)))
+    (puthash cmd id lsp-rocks--recent-requests)
+    (lsp-rocks-call-sync "sync" (list :id id :cmd cmd :params params))))
 
 (defun lsp-rocks--response (id cmd data)
   "Send response to server."
-  (lsp-rocks-call-async "message" (list :id id :cmd cmd :data data))
-  ;; (websocket-send-text
-  ;;  (lsp-rocks--get-websocket-client)
-  ;;  (lsp-rocks--json-stringify
-  ;;   (list :id id :cmd cmd :data data)))
-  )
+  (lsp-rocks-call-async "message" (list :id id :cmd cmd :data data)))
 
 (defun lsp-rocks--point-position (pos)
   "Get position of POS."
@@ -1110,30 +1063,19 @@ Doubles as an indicator of snippet support."
     (post-command-hook . lsp-rocks--post-command-hook)))
 
 (defun lsp-rocks--enable ()
-  ;; (unless lsp-rocks--server-process
-  ;;   (lsp-rocks--start-server))
-  ;; (lsp-rocks--init)
   (unless (epc:live-p lsp-rocks-process)
     (lsp-rocks-start-process))
   (deferred:$
+   ;; 在 ts 端检查是否有可用的 lsp 服务，否则走 catch 分支？
    (lsp-rocks--init)
-   (deferred:nextc it
-                   (lambda ()
-                     (message "run callback")
-                     (setq lsp-rocks-buffer-uri (lsp-rocks--buffer-uri))
-                     (lsp-rocks--did-open)
-                     (add-to-list 'company-backends 'company-lsp-rocks)
-                     (dolist (hook lsp-rocks--internal-hooks)
-                       (add-hook (car hook) (cdr hook) nil t)))))
-  ;; (unless (lsp-rocks--get-websocket-client)
-  ;;   (while (null (lsp-rocks--get-websocket-client))
-  ;;     (ignore-errors
-  ;;       (lsp-rocks--save-websocket-client
-  ;;        (lsp-rocks--create-websocket-client
-  ;;         (format "ws://%s:%s" lsp-rocks-server-host lsp-rocks--server-port))))
-  ;;     (sleep-for 0 20)))
-
-  )
+   (deferred:nextc
+    it
+    (lambda ()
+      (setq lsp-rocks-buffer-uri (lsp-rocks--buffer-uri))
+      (lsp-rocks--did-open)
+      (add-to-list 'company-backends 'company-lsp-rocks)
+      (dolist (hook lsp-rocks--internal-hooks)
+        (add-hook (car hook) (cdr hook) nil t))))))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)
