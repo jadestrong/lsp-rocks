@@ -363,6 +363,11 @@ This set of allowed chars is enough for hexifying local file paths.")
                               :args args
                               :clientInfo (list :name "Emacs" :version (emacs-version))))))
 
+(defun lsp-rocks--inited()
+  "When create LanguageClient successed, called by lsp-rocks server."
+  (setq lsp-rocks-buffer-uri (lsp-rocks--buffer-uri))
+  (lsp-rocks--did-open))
+
 (defun lsp-rocks--message-handler (msg)
   (let* (
          ;; (msg (lsp-rocks--json-parse (websocket-frame-payload frame)))
@@ -600,7 +605,6 @@ File paths with spaces are only supported inside strings."
       (erase-buffer)
       (insert formatted)
       (current-buffer))))
-
 
 (defvar-local lsp-rocks--prepare-result nil
   "Result of `lsp-rocks--prepare-rename'.")
@@ -975,7 +979,7 @@ Doubles as an indicator of snippet support."
   "Send a message with given CMD and PARAMS synchronously."
   (when-let ((id (lsp-rocks--request-id)))
     (puthash cmd id lsp-rocks--recent-requests)
-    (lsp-rocks-call-sync "sync" (list :id id :cmd cmd :params params))))
+    (lsp-rocks-call-sync "request" (list :id id :cmd cmd :params params))))
 
 (defun lsp-rocks--response (id cmd data)
   "Send response to server."
@@ -1065,17 +1069,19 @@ Doubles as an indicator of snippet support."
 (defun lsp-rocks--enable ()
   (unless (epc:live-p lsp-rocks-process)
     (lsp-rocks-start-process))
-  (deferred:$
-   ;; 在 ts 端检查是否有可用的 lsp 服务，否则走 catch 分支？
-   (lsp-rocks--init)
-   (deferred:nextc
-    it
-    (lambda ()
-      (setq lsp-rocks-buffer-uri (lsp-rocks--buffer-uri))
-      (lsp-rocks--did-open)
-      (add-to-list 'company-backends 'company-lsp-rocks)
-      (dolist (hook lsp-rocks--internal-hooks)
-        (add-hook (car hook) (cdr hook) nil t))))))
+  ;; TODO 如何延迟到已经 inited 之后再开始呢
+  ;; NOTE 使用自定义的hooks
+  (add-to-list 'company-backends 'company-lsp-rocks)
+  (dolist (hook lsp-rocks--internal-hooks)
+    (add-hook (car hook) (cdr hook) nil t))
+  )
+;; (deferred:$
+;;  ;; 在 ts 端检查是否有可用的 lsp 服务，否则走 catch 分支？
+;;  (lsp-rocks--init)
+;;  (deferred:nextc
+;;   it
+;;   (lambda ()
+;;     )))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)

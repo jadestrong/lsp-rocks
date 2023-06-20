@@ -1,6 +1,6 @@
 import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
-import { init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
+import { eval_in_emacs, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 
 /**
  * All supports request commands
@@ -76,11 +76,14 @@ export class LspRocks {
       }
     });
 
-    this._server?.defineMethod('sync', async (message: Message) => {
+    this._server?.defineMethod('request', async (message: Message) => {
       this._recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
       return response?.data
     })
+
+    // start success, notify emacs to init
+    eval_in_emacs('lsp-rocks--init')
   }
 
   public async messageHandler(msg: Message) {
@@ -130,6 +133,7 @@ export class LspRocks {
         });
         this._clients.set(clientId, client);
         await client.start();
+        eval_in_emacs('lsp-rocks--inited')
       } else {
         message_emacs('Can not create LanguageClient, because language and project is undefined')
         throw new Error('Can not create LanguageClient, because language and project is undefined');
