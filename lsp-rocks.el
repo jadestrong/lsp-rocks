@@ -766,10 +766,8 @@ Doubles as an indicator of snippet support."
 
 (defun lsp-rocks--process-completion (data)
   "Process LSP completion DATA."
-  (message "process-completion %s" data)
   (when lsp-rocks--company-callback
-    (funcall lsp-rocks--company-callback (lsp-rocks--parse-completion data)))
-  nil)
+    (funcall lsp-rocks--company-callback (and data (lsp-rocks--parse-completion data)))))
 
 (defun lsp-rocks--process-completion-resolve (item)
   "Process LSP resolved completion ITEM."
