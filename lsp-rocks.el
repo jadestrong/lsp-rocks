@@ -38,6 +38,12 @@
 (defvar lsp-rocks-process nil
   "The LSP-ROCKS Process.")
 
+(defvar lsp-rocks-is-started nil
+  "Is the Server is started.")
+
+(defvar lsp-rocks-started-hook nil
+  "Hook for server started.")
+
 (defvar lsp-rocks-node-file (expand-file-name "cli.ts" (if load-file-name
                                                            (file-name-directory load-file-name)
                                                          default-directory)))
@@ -171,7 +177,8 @@
   (run-hooks 'lsp-rocks-stop-process-hook)
 
   ;; Kill process after kill buffer, make application can save session data.
-  (lsp-rocks--kill-node-process))
+  (lsp-rocks--kill-node-process)
+  (setq lsp-rocks-is-started nil))
 
 (add-hook 'kill-emacs-hook #'lsp-rocks-kill-process)
 
@@ -366,6 +373,8 @@ This set of allowed chars is enough for hexifying local file paths.")
 (defun lsp-rocks--inited()
   "When create LanguageClient successed, called by lsp-rocks server."
   (setq lsp-rocks-buffer-uri (lsp-rocks--buffer-uri))
+  (setq lsp-rocks-is-started t)
+  (run-hooks 'lsp-rocks-started-hook)
   (lsp-rocks--did-open))
 
 (defun lsp-rocks--message-handler (msg)
@@ -378,7 +387,7 @@ This set of allowed chars is enough for hexifying local file paths.")
     (when (string= id (gethash cmd lsp-rocks--recent-requests))
       (pcase cmd
         ("get_var" (lsp-rocks--response id cmd (list :value (symbol-value (intern (plist-get params :name))))))
-        ("textDocument/completion" (funcall lsp-rocks--company-callback (lsp-rocks--parse-completion data)))
+        ("textDocument/completion" (lsp-rocks--process-completion data))
         ("completionItem/resolve" (lsp-rocks--process-completion-resolve data))
         ("textDocument/definition" (lsp-rocks--process-find-definition data))
         ("textDocument/typeDefinition" (lsp-rocks--process-find-definition data))
@@ -390,6 +399,7 @@ This set of allowed chars is enough for hexifying local file paths.")
         ("textDocument/prepareRename" (lsp-rocks--process-prepare-rename data))
         ("textDocument/rename" (lsp-rocks--process-rename data))
         ))))
+
 
 (defconst lsp-rocks--trigger-characters
   '("." "\"" "'" "/" "@" "<"))
@@ -466,7 +476,7 @@ File paths with spaces are only supported inside strings."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-lsp-rocks))
-    (prefix (lsp-rocks--completion-prefix))
+    (prefix (and lsp-rocks-is-started (lsp-rocks--completion-prefix)))
     (candidates (cons :async (lambda (callback)
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
@@ -537,7 +547,7 @@ File paths with spaces are only supported inside strings."
 
 (defun lsp-rocks--sync-resolve (label)
   (lsp-rocks--sync "completionItem/resolve"
-                      (list :label label)))
+                   (list :label label)))
 
 (defun lsp-rocks-find-definition ()
   "Find definition."
@@ -753,6 +763,13 @@ Doubles as an indicator of snippet support."
         (ignore-errors (delay-mode-hooks (funcall mode))))
       (font-lock-ensure)
       (string-trim (buffer-string)))))
+
+(defun lsp-rocks--process-completion (data)
+  "Process LSP completion DATA."
+  (message "process-completion %s" data)
+  (when lsp-rocks--company-callback
+    (funcall lsp-rocks--company-callback (lsp-rocks--parse-completion data)))
+  nil)
 
 (defun lsp-rocks--process-completion-resolve (item)
   "Process LSP resolved completion ITEM."
@@ -1066,26 +1083,26 @@ Doubles as an indicator of snippet support."
     (after-save-hook . lsp-rocks--after-save-hook)
     (post-command-hook . lsp-rocks--post-command-hook)))
 
+(defun lsp-rocks-register-internal-hooks ()
+  "Register internal hooks."
+  (message "run register internal hooks")
+  ;; (add-to-list 'company-backends 'company-lsp-rocks)
+  (dolist (hook lsp-rocks--internal-hooks)
+    (add-hook (car hook) (cdr hook) nil t)))
+
 (defun lsp-rocks--enable ()
   (unless (epc:live-p lsp-rocks-process)
     (lsp-rocks-start-process))
   ;; TODO 如何延迟到已经 inited 之后再开始呢
   ;; NOTE 使用自定义的hooks
-  (add-to-list 'company-backends 'company-lsp-rocks)
-  (dolist (hook lsp-rocks--internal-hooks)
-    (add-hook (car hook) (cdr hook) nil t))
-  )
-;; (deferred:$
-;;  ;; 在 ts 端检查是否有可用的 lsp 服务，否则走 catch 分支？
-;;  (lsp-rocks--init)
-;;  (deferred:nextc
-;;   it
-;;   (lambda ()
-;;     )))
+  (if lsp-rocks-is-started
+      (lsp-rocks-register-internal-hooks)
+    (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks)))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)
-    (remove-hook (car hook) (cdr hook) t)))
+    (remove-hook (car hook) (cdr hook) t))
+  (remove-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks))
 
 (defvar lsp-rocks-mode-map (make-sparse-keymap))
 
