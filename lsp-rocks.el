@@ -401,35 +401,35 @@ This set of allowed chars is enough for hexifying local file paths.")
         ))))
 
 
-(defconst lsp-rocks--trigger-characters
-  '("." "\"" "'" "/" "@" "<"))
+;; (defconst lsp-rocks--trigger-characters
+;;   '("." "\"" "'" "/" "@" "<"))
 
-(defun lsp-rocks--completion-prefix ()
-  "Return the completion prefix.
-Return value is compatible with the `prefix' command of a company backend.
-Return nil if no completion should be triggered.  Return a string
-as the prefix to be completed, or a cons cell of (prefix . t) to bypass
-`company-minimum-prefix-length' for trigger characters."
-  (or (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
-                                                    (length trigger-char))
-                                                  lsp-rocks--trigger-characters)))
-             (trigger-regex (s-join "\\|" (mapcar #'regexp-quote lsp-rocks--trigger-characters)))
-             (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
-        ;; Some major modes define trigger characters as part of the symbol. For
-        ;; example "@" is considered a vaild part of symbol in java-mode.
-        ;; Company will grab the trigger character as part of the prefix while
-        ;; the server doesn't. Remove the leading trigger character to solve
-        ;; this issue.
-        (let* ((symbol (if (consp symbol-cons)
-                           (car symbol-cons)
-                         symbol-cons))
-               (trigger-char (seq-find (lambda (trigger-char)
-                                         (s-starts-with? trigger-char symbol))
-                                       lsp-rocks--trigger-characters)))
-          (if trigger-char
-              (cons (substring symbol (length trigger-char)) t)
-            symbol-cons)))
-      (company-grab-symbol)))
+;; (defun lsp-rocks--completion-prefix ()
+;;   "Return the completion prefix.
+;; Return value is compatible with the `prefix' command of a company backend.
+;; Return nil if no completion should be triggered.  Return a string
+;; as the prefix to be completed, or a cons cell of (prefix . t) to bypass
+;; `company-minimum-prefix-length' for trigger characters."
+;;   (or (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
+;;                                                     (length trigger-char))
+;;                                                   lsp-rocks--trigger-characters)))
+;;              (trigger-regex (s-join "\\|" (mapcar #'regexp-quote lsp-rocks--trigger-characters)))
+;;              (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
+;;         ;; Some major modes define trigger characters as part of the symbol. For
+;;         ;; example "@" is considered a vaild part of symbol in java-mode.
+;;         ;; Company will grab the trigger character as part of the prefix while
+;;         ;; the server doesn't. Remove the leading trigger character to solve
+;;         ;; this issue.
+;;         (let* ((symbol (if (consp symbol-cons)
+;;                            (car symbol-cons)
+;;                          symbol-cons))
+;;                (trigger-char (seq-find (lambda (trigger-char)
+;;                                          (s-starts-with? trigger-char symbol))
+;;                                        lsp-rocks--trigger-characters)))
+;;           (if trigger-char
+;;               (cons (substring symbol (length trigger-char)) t)
+;;             symbol-cons)))
+;;       (company-grab-symbol)))
 
 (defun lsp-rocks--company-post-completion (candidate)
   "Replace a CompletionItem's label with its insertText.  Apply text edits.
@@ -476,7 +476,7 @@ File paths with spaces are only supported inside strings."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-lsp-rocks))
-    (prefix (and lsp-rocks-is-started (lsp-rocks--completion-prefix)))
+    (prefix (and lsp-rocks-is-started (company-grab-symbol)))
     (candidates (cons :async (lambda (callback)
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
@@ -531,14 +531,15 @@ File paths with spaces are only supported inside strings."
 (defun lsp-rocks--completion-params (prefix)
   "Make textDocument/completion params."
   ;; 移除 prefix 携带的 text-properties 只能传字符串
-  (set-text-properties 0 (length prefix) nil prefix)
-  (append `(:prefix
-            ,prefix
+  ;; (set-text-properties 0 (length prefix) nil prefix)
+  (append `(
+            ;; :prefix ,prefix
             :line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
             :column ,(current-column)
-            :context ,(if (member prefix lsp-rocks--trigger-characters)
-                          `(:triggerKind 2 :triggerCharacter ,prefix)
-                        '(:triggerKind 1)))
+            ;; :context ,(if (member prefix lsp-rocks--trigger-characters)
+            ;;               `(:triggerKind 2 :triggerCharacter ,prefix)
+            ;;             '(:triggerKind 1))
+            )
           (lsp-rocks--TextDocumentPosition)))
 
 (defun lsp-rocks--resolve (label)
@@ -1094,7 +1095,9 @@ Doubles as an indicator of snippet support."
   ;; TODO 如何延迟到已经 inited 之后再开始呢
   ;; NOTE 使用自定义的hooks
   (if lsp-rocks-is-started
-      (lsp-rocks-register-internal-hooks)
+      (progn
+        (lsp-rocks-register-internal-hooks)
+        (lsp-rocks--did-open))
     (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks)))
 
 (defun lsp-rocks--disable ()

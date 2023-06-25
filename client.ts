@@ -850,8 +850,8 @@ export class LanguageClient {
 
   // TODO
   private async createConnection(): Promise<ProtocolConnection> {
-    const errorHandler = () => {
-      message_emacs("errorHandler")
+    const errorHandler: ConnectionErrorHandler = (e) => {
+      message_emacs("errorHandler: " + e.message)
     };
 
     const closeHandler = () => {

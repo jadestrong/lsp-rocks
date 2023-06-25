@@ -5,7 +5,7 @@ import { byteSlice } from "../utils/string";
 import { RunnableDynamicFeature, ensure } from "./features";
 
 export interface EmacsCompletionParams extends CompletionParams {
-  prefix: string;
+  // prefix: string;
   /* 当前输入所在行的文本 */
   line: string;
   /** 当前输入时光标所在的列 */
@@ -42,19 +42,20 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       commitCharactersSupport: true,
       documentationFormat: [MarkupKind.Markdown, MarkupKind.PlainText],
       deprecatedSupport: true,
-      preselectSupport: true,
-      tagSupport: { valueSet: [CompletionItemTag.Deprecated] },
-      insertReplaceSupport: false,
+      // preselectSupport: true,
+      // tagSupport: { valueSet: [CompletionItemTag.Deprecated] },
+      insertReplaceSupport: true,
       insertTextModeSupport: { valueSet: [InsertTextMode.asIs, InsertTextMode.adjustIndentation] },
       labelDetailsSupport: true
     };
-    completion.insertTextMode = InsertTextMode.adjustIndentation;
+    // completion.insertTextMode = InsertTextMode.adjustIndentation;
     // completion.completionItemKind = { valueSet: SupportedCompletionItemKinds };
-    completion.completionList = {
-      itemDefaults: [
-        'commitCharacters', 'editRange', 'insertTextFormat', 'insertTextMode'
-      ]
-    };
+    // NOTE 这个开启会导致不返回 textEdit ，应该是 vscode-node-languageserver 给处理掉了
+    // completion.completionList = {
+    //   itemDefaults: [
+    //     'commitCharacters', 'editRange', 'insertTextFormat', 'insertTextMode'
+    //   ]
+    // };
   }
 
   // TODO 当前行的文本，当前鼠标所在的位置，当前的行
