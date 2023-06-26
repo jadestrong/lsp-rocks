@@ -83,7 +83,7 @@ export class LspRocks {
     })
 
     // start success, notify emacs to init
-    eval_in_emacs('lsp-rocks--init')
+    // eval_in_emacs('lsp-rocks--init')
   }
 
   public async messageHandler(msg: Message) {
@@ -135,7 +135,7 @@ export class LspRocks {
         });
         this._clients.set(clientId, client);
         await client.start();
-        eval_in_emacs('lsp-rocks--inited')
+        // eval_in_emacs('lsp-rocks--inited')
       } else {
         message_emacs('Can not create LanguageClient, because language and project is undefined')
         throw new Error('Can not create LanguageClient, because language and project is undefined');

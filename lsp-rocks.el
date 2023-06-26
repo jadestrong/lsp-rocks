@@ -166,7 +166,10 @@
   (unless (epc:live-p lsp-rocks-process)
     (lsp-rocks--start-epc)
     (message "[LSP-ROCKS] EPC Server started successly.")
-    (setq lsp-rocks-is-starting nil)))
+    (setq lsp-rocks-is-starting nil)
+    (setq lsp-rocks-is-started t)
+    (lsp-rocks-register-internal-hooks)
+    (lsp-rocks--did-open)))
 
 (defvar lsp-rocks-stop-process-hook nil)
 
@@ -696,7 +699,7 @@ relied upon."
   ;; (alist-get (get-text-property 0 'kind item)
   ;;            lsp-rocks--kind->symbol)
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
-        (kind (or completion-item (plist-get completion-item :kind))))
+         (kind (or completion-item (plist-get completion-item :kind))))
     (alist-get kind lsp-rocks--kind->symbol)))
 
 (defun lsp-rocks--make-candidate (item)
@@ -1105,15 +1108,20 @@ Doubles as an indicator of snippet support."
 
 (defun lsp-rocks--enable ()
   (when buffer-file-name
-    (unless (epc:live-p lsp-rocks-process)
-      (lsp-rocks-start-process))
-    ;; TODO 如何延迟到已经 inited 之后再开始呢
-    ;; NOTE 使用自定义的hooks
-    (if lsp-rocks-is-started
+    (if (epc:live-p lsp-rocks-process)
         (progn
           (lsp-rocks-register-internal-hooks)
           (lsp-rocks--did-open))
-      (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks))))
+      (lsp-rocks-start-process))
+    ;; TODO 如何延迟到已经 inited 之后再开始呢
+    ;; NOTE 使用自定义的hooks
+    ;; (if lsp-rocks-is-started
+    ;;     (progn
+    ;;       (lsp-rocks-register-internal-hooks)
+    ;;       (lsp-rocks--did-open)
+    ;;       )
+    ;;   (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks))
+    ))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)

@@ -81,7 +81,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       }
     }
 
-    const prefix = triggerCharacter ? '' : byteSlice(pretext, Math.max(...[...(triggerCharacters ?? []), ' '].map(char => pretext.lastIndexOf(char))), pretext.length).trim()
+    const prefix = triggerCharacter ? '' : byteSlice(pretext, Math.max(...[...(triggerCharacters ?? []), ' '].map(char => pretext.lastIndexOf(char))) + 1, pretext.length).trim()
 
     message_emacs(`prefix ${prefix} ${triggerCharacter}`)
 
