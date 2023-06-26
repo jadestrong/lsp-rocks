@@ -50,7 +50,8 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
     };
     // completion.insertTextMode = InsertTextMode.adjustIndentation;
     // completion.completionItemKind = { valueSet: SupportedCompletionItemKinds };
-    // NOTE 这个开启会导致不返回 textEdit ，应该是 vscode-node-languageserver 给处理掉了
+    // NOTE 这个开启会导致不返回 textEdit ，这个属性的作用是可以将 items 里面的相同的属性提取出来，
+    // 比如 textEdit 这样就可以显著减少补全列表的体积大小
     // completion.completionList = {
     //   itemDefaults: [
     //     'commitCharacters', 'editRange', 'insertTextFormat', 'insertTextMode'

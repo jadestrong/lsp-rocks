@@ -1,6 +1,6 @@
 import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
-import { eval_in_emacs, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
+import { eval_in_emacs, get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 
 /**
  * All supports request commands
@@ -97,17 +97,18 @@ export class LspRocks {
     } else {
       const req = msg as RequestMessage;
       let data: any = null;
-      // TODO clientId
+      const projectRoot = await get_emacs_func_result<string>('lsp-rocks--suggest-project-root')
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const client = await this.ensureClient('test', req.params);
+      const client = await this.ensureClient(projectRoot);
 
-      if (req.cmd == ServerCommand.Init) {
-        return;
-      }
+      // if (req.cmd == ServerCommand.Init) {
+      //   return;
+      // }
 
       if (this._recentRequests.get(req.cmd) != req.id && req.cmd != 'textDocument/didChange') {
         return;
       }
+
       data = await client.on(req.cmd, req.params);
       if (this._recentRequests.get(req.cmd) != req.id) {
         return;
@@ -122,9 +123,10 @@ export class LspRocks {
 
   }
 
-  private async ensureClient(clientId: string, params?: InitParams): Promise<LanguageClient> {
+  private async ensureClient(clientId: string): Promise<LanguageClient> {
     let client = this._clients.get(clientId);
     if (client === undefined) {
+      const params = await get_emacs_func_result<InitParams>('lsp-rocks--init');
       if (params != undefined) {
         client = new LanguageClient(params.language, params.project, params.clientInfo, {
           command: params.command,

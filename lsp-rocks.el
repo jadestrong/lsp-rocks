@@ -336,7 +336,7 @@ Setting this to nil or 0 will turn off the indicator."
 
 (defun lsp-rocks--buffer-uri ()
   "Return URI of the current buffer."
-  (or lsp-rocks-buffer-uri (lsp-rocks--path-to-uri buffer-file-name)))
+  (or lsp-rocks-buffer-uri (and buffer-file-name (lsp-rocks--path-to-uri buffer-file-name))))
 
 (defconst lsp-rocks--url-path-allowed-chars
   (url--allowed-chars (append '(?/) url-unreserved-chars))
@@ -363,12 +363,11 @@ This set of allowed chars is enough for hexifying local file paths.")
          (language (plist-get config :name))
          (command (plist-get config :command))
          (args (plist-get config :args)))
-    (lsp-rocks--request "init"
-                        (list :project (lsp-rocks--suggest-project-root)
-                              :language language
-                              :command command
-                              :args args
-                              :clientInfo (list :name "Emacs" :version (emacs-version))))))
+    (list :project (lsp-rocks--suggest-project-root)
+          :language language
+          :command command
+          :args args
+          :clientInfo (list :name "Emacs" :version (emacs-version)))))
 
 (defun lsp-rocks--inited()
   "When create LanguageClient successed, called by lsp-rocks server."
@@ -435,14 +434,15 @@ This set of allowed chars is enough for hexifying local file paths.")
   "Replace a CompletionItem's label with its insertText.  Apply text edits.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (let* ((resolved (get-text-property 0 'resolved-item candidate))
-         (label (plist-get resolved :label))
+  (message "post-completion %s" candidate)
+  (let* ((item (get-text-property 0 'lsp-rocks--item candidate))
+         (label (plist-get item :label))
          ;; (start (- (point) (length label)))
-         (insertText (plist-get resolved :insertText))
+         (insertText (plist-get item :insertText))
          ;; 1 = plaintext, 2 = snippet
-         (insertTextFormat (plist-get resolved :insertTextFormat))
-         (textEdit (plist-get resolved :textEdit))
-         (additionalTextEdits (plist-get resolved :additionalTextEdits))
+         (insertTextFormat (plist-get item :insertTextFormat))
+         (textEdit (plist-get item :textEdit))
+         (additionalTextEdits (plist-get item :additionalTextEdits))
          (snippet-fn (and (eql insertTextFormat 2)
                           (lsp-rocks--snippet-expansion-fn))))
     (cond (textEdit
@@ -491,12 +491,14 @@ File paths with spaces are only supported inside strings."
 
 ;;; request functions
 (defun lsp-rocks--did-open ()
-  (lsp-rocks--request "textDocument/didOpen"
-                      (list :textDocument
-                            (list :uri (lsp-rocks--buffer-uri)
-                                  :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
-                                  :version 0
-                                  :text (buffer-substring-no-properties (point-min) (point-max))))))
+  (if buffer-file-name
+      (lsp-rocks--request "textDocument/didOpen"
+                          (list :textDocument
+                                (list :uri (lsp-rocks--buffer-uri)
+                                      :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
+                                      :version 0
+                                      :text (buffer-substring-no-properties (point-min) (point-max)))))
+    ))
 
 (defun lsp-rocks--did-close ()
   "Send textDocument/didClose notification."
@@ -691,26 +693,33 @@ relied upon."
 
 (defun lsp-rocks--candidate-kind (item)
   "Return ITEM's kind."
-  (alist-get (get-text-property 0 'kind item)
-             lsp-rocks--kind->symbol))
+  ;; (alist-get (get-text-property 0 'kind item)
+  ;;            lsp-rocks--kind->symbol)
+  (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
+        (kind (or completion-item (plist-get completion-item :kind))))
+    (alist-get kind lsp-rocks--kind->symbol)))
 
-(defun lsp-rocks--parse-completion (completions)
-  "Parse LPS server returned COMPLETIONS."
-  (let* ((head (car completions))
-         (tail (cdr completions))
-         (head-label (plist-get head :label)))
-    (put-text-property 0 1 'kind (plist-get head :kind) head-label)
-    (put-text-property 0 1 'detail (plist-get head :detail) head-label)
-    (put-text-property 0 1 'resolved-item head head-label)
-    (cons head-label
-          (cl-mapcar (lambda (it)
-                       (let* ((ret (plist-get it :label))
-                              (kind (plist-get it :kind))
-                              (detail (plist-get it :detail)))
-                         (put-text-property 0 1 'kind kind ret)
-                         (put-text-property 0 1 'detail detail ret)
-                         ret))
-                     tail))))
+(defun lsp-rocks--make-candidate (item)
+  "Convert a Completion ITEM to a string."
+  (propertize (plist-get item :label) 'lsp-rocks--item item))
+
+;; (defun lsp-rocks--parse-completion (completions)
+;;   "Parse LPS server returned COMPLETIONS."
+;;   (let* ((head (car completions))
+;;          (tail (cdr completions))
+;;          (head-label (plist-get head :label)))
+;;     (put-text-property 0 1 'kind (plist-get head :kind) head-label)
+;;     (put-text-property 0 1 'detail (plist-get head :detail) head-label)
+;;     (put-text-property 0 1 'resolved-item head head-label)
+;;     (cons head-label
+;;           (cl-mapcar (lambda (it)
+;;                        (let* ((ret (plist-get it :label))
+;;                               (kind (plist-get it :kind))
+;;                               (detail (plist-get it :detail)))
+;;                          (put-text-property 0 1 'kind kind ret)
+;;                          (put-text-property 0 1 'detail detail ret)
+;;                          ret))
+;;                      tail))))
 
 (defun lsp-rocks--lsp-position-to-point (pos-plist &optional marker)
   "Convert LSP position POS-PLIST to Emacs point.
@@ -768,7 +777,12 @@ Doubles as an indicator of snippet support."
 (defun lsp-rocks--process-completion (data)
   "Process LSP completion DATA."
   (when lsp-rocks--company-callback
-    (funcall lsp-rocks--company-callback (and data (lsp-rocks--parse-completion data)))))
+    (funcall
+     lsp-rocks--company-callback
+     (and data
+          (mapcar (lambda (candidate)
+                    (lsp-rocks--make-candidate candidate))
+                  data)))))
 
 (defun lsp-rocks--process-completion-resolve (item)
   "Process LSP resolved completion ITEM."
@@ -1090,15 +1104,16 @@ Doubles as an indicator of snippet support."
     (add-hook (car hook) (cdr hook) nil t)))
 
 (defun lsp-rocks--enable ()
-  (unless (epc:live-p lsp-rocks-process)
-    (lsp-rocks-start-process))
-  ;; TODO 如何延迟到已经 inited 之后再开始呢
-  ;; NOTE 使用自定义的hooks
-  (if lsp-rocks-is-started
-      (progn
-        (lsp-rocks-register-internal-hooks)
-        (lsp-rocks--did-open))
-    (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks)))
+  (when buffer-file-name
+    (unless (epc:live-p lsp-rocks-process)
+      (lsp-rocks-start-process))
+    ;; TODO 如何延迟到已经 inited 之后再开始呢
+    ;; NOTE 使用自定义的hooks
+    (if lsp-rocks-is-started
+        (progn
+          (lsp-rocks-register-internal-hooks)
+          (lsp-rocks--did-open))
+      (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks))))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)

@@ -61,7 +61,7 @@ export async function get_emacs_var(var_name: string) {
     return convert_emacs_bool(symbol_value, symbol_is_boolean)
 }
 
-export async function get_emacs_func_result<T extends boolean>(method_name: string, ...args: any[]): Promise<T> {
+export async function get_emacs_func_result<T>(method_name: string, ...args: any[]): Promise<T> {
     const _args = [symbol(method_name), ...(args.map(handle_arg_types))];
     const sexp = encode(_args);
     const result = await epc_client?.callMethod<any>('get-emacs-func-result', [sexp])
