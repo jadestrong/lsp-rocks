@@ -696,10 +696,8 @@ relied upon."
 
 (defun lsp-rocks--candidate-kind (item)
   "Return ITEM's kind."
-  ;; (alist-get (get-text-property 0 'kind item)
-  ;;            lsp-rocks--kind->symbol)
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
-         (kind (or completion-item (plist-get completion-item :kind))))
+         (kind (and completion-item (plist-get completion-item :kind))))
     (alist-get kind lsp-rocks--kind->symbol)))
 
 (defun lsp-rocks--make-candidate (item)
