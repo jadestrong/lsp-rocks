@@ -549,11 +549,11 @@ File paths with spaces are only supported inside strings."
 
 (defun lsp-rocks--resolve (label)
   (lsp-rocks--request "completionItem/resolve"
-                      (list :label label)))
+                      (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))
 
 (defun lsp-rocks--sync-resolve (label)
   (lsp-rocks--sync "completionItem/resolve"
-                   (list :label label)))
+                   (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))
 
 (defun lsp-rocks-find-definition ()
   "Find definition."

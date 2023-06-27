@@ -55,8 +55,9 @@ function mkres(id: string | number, cmd: string, data: string[]) {
 export class LspRocks {
   private _server: RPCServer | null;
 
-  private _emacsVars: Map<string, any>;
+  // private _emacsVars: Map<string, any>;
 
+  readonly _filePathToProject: Map<string, string> = new Map();
   readonly _clients: Map<string, LanguageClient>;
 
   readonly _recentRequests: Map<string, any>;
@@ -97,7 +98,14 @@ export class LspRocks {
     } else {
       const req = msg as RequestMessage;
       let data: any = null;
-      const projectRoot = await get_emacs_func_result<string>('lsp-rocks--suggest-project-root')
+      const { textDocument: { uri } } = req.params
+      let projectRoot = this._filePathToProject.get(uri);
+
+      if (!projectRoot) {
+        projectRoot = await get_emacs_func_result<string>('lsp-rocks--suggest-project-root')
+        this._filePathToProject.set(uri, projectRoot);
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const client = await this.ensureClient(projectRoot);
 
