@@ -3,6 +3,7 @@ import { LanguageClient } from "../client";
 import { message_emacs } from "../epc-utils";
 import { byteSlice } from "../utils/string";
 import { RunnableDynamicFeature, ensure } from "./features";
+import filterItems from "../utils/filterItems";
 
 export interface EmacsCompletionParams extends CompletionParams {
   // prefix: string;
@@ -94,25 +95,26 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       return [];
     }
 
-    const completions = resp
-      .items
-      .filter(it => (it.filterText ?? it.label).startsWith(prefix))
-      .slice(0, this.max_completion_size)
-      .sort((a, b) => {
-        if (a.sortText != undefined && b.sortText != undefined) {
-          if (a.sortText == b.sortText) {
-            return a.label.length - b.label.length;
-          }
-          return a.sortText < b.sortText ? -1 : 1;
-        }
-        return 0;
-      });
+    const completions = filterItems(prefix, resp.items).slice(0, this.max_completion_size)
+    // const completions = resp
+    //   .items
+    //   .filter(it => (it.filterText ?? it.label).startsWith(prefix))
+    //   .slice(0, this.max_completion_size)
+    //   .sort((a, b) => {
+    //     if (a.sortText != undefined && b.sortText != undefined) {
+    //       if (a.sortText == b.sortText) {
+    //         return a.label.length - b.label.length;
+    //       }
+    //       return a.sortText < b.sortText ? -1 : 1;
+    //     }
+    //     return 0;
+    //   });
 
-    const head = completions.shift()
-    if (head != undefined) {
-      const resolvedHead = await this.client.sendRequest(CompletionResolveRequest.type, head);
-      completions.unshift(resolvedHead);
-    }
+    // const head = completions.shift()
+    // if (head != undefined) {
+    //   const resolvedHead = await this.client.sendRequest(CompletionResolveRequest.type, head);
+    //   completions.unshift(resolvedHead);
+    // }
     completions.forEach(it => labelCompletionMap.set(it.label, it));
     return completions;
   }
