@@ -1,4 +1,5 @@
 import { encode, quote, symbol, startServer, RPCServer } from 'ts-elrpc';
+import { IS_DEBUG } from './log';
 
 let epc_client: RPCServer | null = null;
 
@@ -70,7 +71,9 @@ export async function get_emacs_func_result<T>(method_name: string, ...args: any
 
 export const logger = {
   info: (...args: any[]) => {
-    eval_in_emacs('lsp-rocks--log', ...args)
+    if (IS_DEBUG) {
+      eval_in_emacs('lsp-rocks--log', ...args)
+    }
   },
 }
 

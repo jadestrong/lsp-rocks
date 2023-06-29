@@ -1,4 +1,4 @@
-import { ClientCapabilities, CompletionItem, CompletionItemTag, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, CompletionTriggerKind, InsertTextMode, MarkupKind, RegistrationType} from "vscode-languageserver-protocol";
+import { ClientCapabilities, CompletionItem, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, CompletionTriggerKind, InsertTextMode, MarkupKind, RegistrationType} from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
 import { message_emacs } from "../epc-utils";
 import { byteSlice } from "../utils/string";

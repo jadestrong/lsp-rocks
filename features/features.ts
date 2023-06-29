@@ -3,11 +3,8 @@ import { LanguageClient } from "../client";
 import * as Is from '../util';
 
 
-export function ensure<T, K extends keyof T>(target: T, key: K): T[K] {
-  if (target[key] === undefined) {
-    target[key] = {} as any;
-  }
-  return target[key];
+export function ensure<T, K extends keyof T>(target: T, key: K) {
+  return target[key] ?? (target[key] = {} as any)
 }
 
 /**

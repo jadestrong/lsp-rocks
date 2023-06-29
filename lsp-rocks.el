@@ -129,6 +129,11 @@
     (epc:define-method lsp-rocks-process 'get-emacs-func-result 'lsp-rocks--get-emacs-func-result-func))
   lsp-rocks-process)
 
+(defun lsp-rocks--toggle-trace-io ()
+  "Toggle client-server protocol logging."
+  (interactive)
+  (lsp-rocks-call-async "lsp-rocks--toggle-trace-io"))
+
 (defun lsp-rocks--log (&rest params)
   "Log there PARAMS to a buffer."
   (with-current-buffer (get-buffer-create lsp-rocks-name)

@@ -1,6 +1,7 @@
 import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
 import { eval_in_emacs, get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
+import { toggleDebug } from './log';
 
 /**
  * All supports request commands
@@ -48,10 +49,6 @@ interface ResponseMessage extends Message {
 }
 
 
-function mkres(id: string | number, cmd: string, data: string[]) {
-  return JSON.stringify({ id, cmd, data });
-}
-
 export class LspRocks {
   private _server: RPCServer | null;
 
@@ -81,6 +78,10 @@ export class LspRocks {
       this._recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
       return response?.data
+    })
+
+    this._server?.defineMethod('lsp-rocks--toggle-trace-io', async () => {
+      toggleDebug()
     })
 
     // start success, notify emacs to init

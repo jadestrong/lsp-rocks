@@ -260,6 +260,7 @@ function createConnection(
   });
   connection.onClose(closeHandler);
 
+  // NOTE trace log
   connection.trace(Trace.Verbose, {
     log(messageOrDataObject: string | any, data?: string) {
       if (Is.string(messageOrDataObject)) {
@@ -605,12 +606,12 @@ export class LanguageClient {
 
   private computeClientCapabilities(): ClientCapabilities {
     const result: ClientCapabilities = {};
-    ensure(result, "workspace")!.applyEdit = true;
+    ensure(result, "workspace").applyEdit = true;
 
     const workspaceEdit = ensure(
-      ensure(result, "workspace")!,
+      ensure(result, "workspace"),
       "workspaceEdit"
-    )!;
+    );
     workspaceEdit.documentChanges = true;
     workspaceEdit.resourceOperations = [
       ResourceOperationKind.Create,
@@ -624,9 +625,9 @@ export class LanguageClient {
     };
 
     const diagnostics = ensure(
-      ensure(result, "textDocument")!,
+      ensure(result, "textDocument"),
       "publishDiagnostics"
-    )!;
+    );
     diagnostics.relatedInformation = true;
     diagnostics.versionSupport = false;
     diagnostics.tagSupport = {
@@ -635,13 +636,13 @@ export class LanguageClient {
     diagnostics.codeDescriptionSupport = true;
     diagnostics.dataSupport = true;
 
-    const windowCapabilities = ensure(result, "window")!;
-    const showMessage = ensure(windowCapabilities, "showMessage")!;
+    const windowCapabilities = ensure(result, "window");
+    const showMessage = ensure(windowCapabilities, "showMessage");
     showMessage.messageActionItem = { additionalPropertiesSupport: true };
-    const showDocument = ensure(windowCapabilities, "showDocument")!;
+    const showDocument = ensure(windowCapabilities, "showDocument");
     showDocument.support = true;
 
-    const generalCapabilities = ensure(result, "general")!;
+    const generalCapabilities = ensure(result, "general");
     generalCapabilities.staleRequestSupport = {
       cancel: true,
       retryOnContentModified: Array.from(
@@ -756,12 +757,14 @@ export class LanguageClient {
       : undefined;
   }
 
-  public stop(timeout = 2000): Promise<void> {
-    return this.shutdown("stop", timeout).finally(() => {
+  public async stop(timeout = 2000) {
+    try {
+      await this.shutdown('stop', timeout);
+    } finally {
       if (this._serverProcess) {
         this._serverProcess = undefined;
       }
-    });
+    }
   }
 
   private async shutdown(
@@ -897,60 +900,58 @@ export class LanguageClient {
     return version;
   }
 
-  protected createMessageTransports(
+  protected async createMessageTransports(
     encoding: string
   ): Promise<MessageTransports> {
     const server = this._serverOptions;
-    return this._getServerWorkingDir(server.options).then(
-      (serverWorkingDir) => {
-        if (Executable.is(server) && server.command) {
-          const args: string[] =
-            server.args !== undefined ? server.args.slice(0) : [];
-          let pipeName: string | undefined = undefined;
-          const transport = server.transport;
-          if (transport === TransportKind.stdio) {
-            args.push("--stdio");
-          } else if (transport === TransportKind.pipe) {
-            pipeName = generateRandomPipeName();
-            args.push(`--pipe=${pipeName}`);
-          } else if (Transport.isSocket(transport)) {
-            args.push(`--socket=${transport.port}`);
-          } else if (transport === TransportKind.ipc) {
-            throw new Error(
-              "Transport kind ipc is not support for command executable"
-            );
-          }
-          const options = Object.assign({}, server.options);
-          options.cwd = options.cwd || serverWorkingDir;
-          if (transport === undefined || transport === TransportKind.stdio) {
-            message_emacs(`server ${server.command} ${args.join(' ')} ${JSON.stringify(options)}`)
-            const serverProcess = spawn(server.command, args, options);
-            if (!serverProcess || !serverProcess.pid) {
-              return handleChildProcessStartError(
-                serverProcess,
-                `Launching server using command ${server.command} failed.`
-              );
-            }
-            serverProcess.stderr.on("data", (data) =>
-              console.error(
-                "server error: ",
-                Is.string(data) ? data : data.toString(encoding)
-              )
-            );
-            this._serverProcess = serverProcess;
-            return Promise.resolve({
-              reader: new StreamMessageReader(serverProcess.stdout),
-              writer: new StreamMessageWriter(serverProcess.stdin),
-            });
-          }
-        }
-        return Promise.reject<MessageTransports>(
-          new Error(
-            "Unsupported server configuration " +
-              JSON.stringify(server, null, 4)
-          )
+    const serverWorkingDir = await this._getServerWorkingDir(server.options);
+
+    if (Executable.is(server) && server.command) {
+      const args: string[] =
+        server.args !== undefined ? server.args.slice(0) : [];
+      let pipeName: string | undefined = undefined;
+      const transport = server.transport;
+      if (transport === TransportKind.stdio) {
+        args.push("--stdio");
+      } else if (transport === TransportKind.pipe) {
+        pipeName = generateRandomPipeName();
+        args.push(`--pipe=${pipeName}`);
+      } else if (Transport.isSocket(transport)) {
+        args.push(`--socket=${transport.port}`);
+      } else if (transport === TransportKind.ipc) {
+        throw new Error(
+          "Transport kind ipc is not support for command executable"
         );
       }
+      const options = Object.assign({}, server.options);
+      options.cwd = options.cwd || serverWorkingDir;
+      if (transport === undefined || transport === TransportKind.stdio) {
+        message_emacs(`server ${server.command} ${args.join(' ')} ${JSON.stringify(options)}`)
+        const serverProcess = spawn(server.command, args, options);
+        if (!serverProcess || !serverProcess.pid) {
+          return handleChildProcessStartError(
+            serverProcess,
+            `Launching server using command ${server.command} failed.`
+          );
+        }
+        serverProcess.stderr.on("data", (data) =>
+          console.error(
+            "server error: ",
+            Is.string(data) ? data : data.toString(encoding)
+          )
+        );
+        this._serverProcess = serverProcess;
+        return Promise.resolve({
+          reader: new StreamMessageReader(serverProcess.stdout),
+          writer: new StreamMessageWriter(serverProcess.stdin),
+        });
+      }
+    }
+    return Promise.reject<MessageTransports>(
+      new Error(
+        "Unsupported server configuration " +
+          JSON.stringify(server, null, 4)
+      )
     );
   }
 
@@ -958,19 +959,17 @@ export class LanguageClient {
   private _getServerWorkingDir(options?: {
     cwd?: string;
   }): Promise<string | undefined> {
-    let cwd = options && options.cwd;
-    if (!cwd) {
-      cwd = undefined;
-    }
-    if (cwd) {
-      // make sure the folder exists otherwise creating the process will fail
-      return new Promise((s) => {
-        fs.lstat(cwd!, (err, stats) => {
-          s(!err && stats.isDirectory() ? cwd : undefined);
+    const cwd = options && options.cwd;
+    // make sure the folder exists otherwise creating the process will fail
+    return new Promise((resolve) => {
+      if (cwd) {
+        fs.lstat(cwd, (err, stats) => {
+          resolve(!err && stats.isDirectory() ? cwd : undefined);
         });
-      });
-    }
-    return Promise.resolve(undefined);
+      } else {
+        resolve(undefined)
+      }
+    });
   }
 
   private data2String(data: object): string {
