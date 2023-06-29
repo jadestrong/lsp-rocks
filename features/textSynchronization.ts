@@ -9,7 +9,7 @@ export class DidOpenTextDocumentFeature extends RunnableDynamicFeature<DidOpenTe
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    ensure(ensure(capabilities, 'textDocument')!, 'synchronization')!.dynamicRegistration = true;
+    ensure(ensure(capabilities, 'textDocument'), 'synchronization').dynamicRegistration = true;
   }
 
   public runWith(params: DidOpenTextDocumentParams) {
@@ -29,10 +29,12 @@ export class DidCloseTextDocumentFeature extends RunnableDynamicFeature<DidClose
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    ensure(ensure(capabilities, 'textDocument')!, 'synchronization')!.dynamicRegistration = true;
+    ensure(ensure(capabilities, 'textDocument'), 'synchronization').dynamicRegistration = true;
   }
 
   public runWith(params: DidCloseTextDocumentParams) {
+    // NOTE delete file and shutdown server and client
+    // if (this.client)
     return this.client.sendNotification(this.registrationType.method, params);
   }
 
@@ -49,7 +51,7 @@ export class DidChangeTextDocumentFeature extends RunnableDynamicFeature<DidChan
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities) {
-    ensure(ensure(capabilities, 'textDocument')!, 'synchronization')!.dynamicRegistration = true;
+    ensure(ensure(capabilities, 'textDocument'), 'synchronization').dynamicRegistration = true;
   }
 
   protected runWith(params: DidChangeTextDocumentParams) {
@@ -69,7 +71,7 @@ export class WillSaveTextDocumentFeature extends RunnableDynamicFeature<WillSave
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities) {
-    ensure(ensure(capabilities, 'textDocument')!, 'synchronization')!.willSave = true;
+    ensure(ensure(capabilities, 'textDocument'), 'synchronization').willSave = true;
   }
 
   protected createParams(params: WillSaveTextDocumentParams): WillSaveTextDocumentParams {
@@ -93,7 +95,7 @@ export class DidSaveTextDocumentFeature extends RunnableDynamicFeature<DidSaveTe
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities) {
-    ensure(ensure(capabilities, 'textDocument')!, 'synchronization')!.didSave = true;
+    ensure(ensure(capabilities, 'textDocument'), 'synchronization').didSave = true;
   }
 
   protected runWith(params: DidSaveTextDocumentParams) {

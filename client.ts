@@ -529,8 +529,7 @@ export class LanguageClient {
     } catch (error) {
       this.$state = ClientState.StartFailed;
       this.error(
-        `${this._name} client: couldn't create connection to server.`,
-        (error as Error).message
+        `${this._name} client: couldn't create connection to server. ${(error as Error).message}`,
       );
       reject(error);
     }
