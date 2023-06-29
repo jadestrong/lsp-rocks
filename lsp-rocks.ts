@@ -1,6 +1,6 @@
 import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
-import { eval_in_emacs, get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
+import { get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 import { toggleDebug } from './log';
 
 /**
@@ -81,11 +81,15 @@ export class LspRocks {
     })
 
     this._server?.defineMethod('lsp-rocks--toggle-trace-io', async () => {
-      toggleDebug()
+      const isDebug = toggleDebug()
+      if (this._server?.logger) {
+        this._server.logger.level = isDebug ? 'debug' : 'off';
+      }
     })
 
-    // start success, notify emacs to init
-    // eval_in_emacs('lsp-rocks--init')
+    this._server?.defineMethod('get-elrpc-logfile', async () => {
+      return this._server?.logfile ?? ''
+    })
   }
 
   public async messageHandler(msg: Message) {

@@ -134,6 +134,14 @@
   (interactive)
   (lsp-rocks-call-async "lsp-rocks--toggle-trace-io"))
 
+(defun lsp-rocks--open-elrpc-log ()
+  "Open elrpc log file."
+  (interactive)
+  (let ((logfile (lsp-rocks-call-sync "get-elrpc-logfile")))
+    (if (file-exists-p logfile)
+        (find-file logfile)
+      (user-error "No such log file %s" logfile))))
+
 (defun lsp-rocks--log (&rest params)
   "Log there PARAMS to a buffer."
   (with-current-buffer (get-buffer-create lsp-rocks-name)
