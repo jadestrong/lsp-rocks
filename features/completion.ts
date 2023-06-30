@@ -1,6 +1,6 @@
 import { ClientCapabilities, CompletionItem, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, CompletionTriggerKind, InsertTextMode, MarkupKind, RegistrationType} from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
-import { message_emacs } from "../epc-utils";
+// import { message_emacs } from "../epc-utils";
 import { byteSlice } from "../utils/string";
 import { RunnableDynamicFeature, ensure } from "./features";
 import filterItems from "../utils/filterItems";
@@ -35,7 +35,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    const completion = ensure(ensure(capabilities, 'textDocument')!, 'completion')!;
+    const completion = ensure(ensure(capabilities, 'textDocument'), 'completion');
     completion.dynamicRegistration = true;
     completion.contextSupport = true;
     completion.completionItem = {
@@ -72,7 +72,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
 
     const pretext = byteSlice(line, 0, column);
     const triggerCharacter = findTriggerCharacter(pretext, triggerCharacters)
-    message_emacs(`pretext ${pretext} ${triggerCharacters?.join(' ')}`)
+    // message_emacs(`pretext ${pretext} ${triggerCharacters?.join(' ')}`)
     const completionParams: CompletionParams = {
       textDocument,
       position,
@@ -84,7 +84,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
 
     const prefix = triggerCharacter ? '' : byteSlice(pretext, Math.max(...[...(triggerCharacters ?? []), ' '].map(char => pretext.lastIndexOf(char))) + 1, pretext.length).trim()
 
-    message_emacs(`prefix ${prefix} ${triggerCharacter}`)
+    // message_emacs(`prefix ${prefix} ${triggerCharacter}`)
 
     const resp = await this.client.sendRequest(CompletionRequest.type, completionParams);
     // message_emacs('completion resp' + JSON.stringify(resp))
@@ -133,7 +133,7 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<Complet
   }
 
   public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    ensure(ensure(ensure(capabilities, 'textDocument')!, 'completion')!, 'completionItem')!.resolveSupport = {
+    ensure(ensure(ensure(capabilities, 'textDocument'), 'completion'), 'completionItem').resolveSupport = {
       properties: ['documentation', 'detail', 'additionalTextEdits']
     };
   }
