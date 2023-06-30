@@ -3,20 +3,6 @@ import { RPCServer } from 'ts-elrpc';
 import { get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 import { toggleDebug } from './log';
 
-/**
- * All supports request commands
- */
-enum ServerCommand {
-  Init = 'init',
-}
-
-enum EmacsCommand {
-  GetVar = 'get-var',
-  CallFunc = 'call-func',
-}
-
-const emacsCommands = Object.values(EmacsCommand);
-
 interface InitParams {
   language: string;
   project: string;
@@ -25,17 +11,9 @@ interface InitParams {
   clientInfo: { name: string, version: string };
 }
 
-namespace Message {
-  export function isResponse(msg: Message): msg is ResponseMessage {
-    return emacsCommands.includes(msg.cmd as EmacsCommand);
-  }
-}
-
-type RequestId = string;
-
 interface Message {
-  id: RequestId,
-  cmd: string | ServerCommand | EmacsCommand,
+  id: string,
+  cmd: string,
 }
 
 interface RequestMessage extends Message {
@@ -44,15 +22,8 @@ interface RequestMessage extends Message {
   params: any;
 }
 
-interface ResponseMessage extends Message {
-  data: any;
-}
-
-
 export class LspRocks {
   private _server: RPCServer | null;
-
-  // private _emacsVars: Map<string, any>;
 
   readonly _filePathToProject: Map<string, string> = new Map();
   readonly _clients: Map<string, LanguageClient>;
@@ -99,43 +70,33 @@ export class LspRocks {
     logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
     const logLabel = `${id}:${cmd}`;
     console.time(logLabel)
-    if (Message.isResponse(msg)) {
-      // TODO
-      message_emacs('get response' + JSON.stringify(msg))
-    } else {
-      const req = msg as RequestMessage;
-      let data: any = null;
-      const { textDocument: { uri } } = req.params
-      let projectRoot = this._filePathToProject.get(uri);
+    const req = msg as RequestMessage;
+    let data: any = null;
+    const { textDocument: { uri } } = req.params
+    let projectRoot = this._filePathToProject.get(uri);
 
-      if (!projectRoot) {
-        projectRoot = await get_emacs_func_result<string>('lsp-rocks--suggest-project-root')
-        this._filePathToProject.set(uri, projectRoot);
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const client = await this.ensureClient(projectRoot);
-
-      // if (req.cmd == ServerCommand.Init) {
-      //   return;
-      // }
-
-      if (this._recentRequests.get(req.cmd) != req.id && req.cmd != 'textDocument/didChange') {
-        return;
-      }
-
-      data = await client.on(req.cmd, req.params);
-      if (this._recentRequests.get(req.cmd) != req.id) {
-        return;
-      }
-      console.timeLog(logLabel)
-      return {
-        id,
-        cmd,
-        data
-      };
+    if (!projectRoot) {
+      projectRoot = await get_emacs_func_result<string>('lsp-rocks--suggest-project-root')
+      this._filePathToProject.set(uri, projectRoot);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const client = await this.ensureClient(projectRoot);
+
+    if (this._recentRequests.get(req.cmd) != req.id && req.cmd != 'textDocument/didChange') {
+      return;
+    }
+
+    data = await client.on(req.cmd, req.params);
+    if (this._recentRequests.get(req.cmd) != req.id) {
+      return;
+    }
+    console.timeLog(logLabel)
+    return {
+      id,
+      cmd,
+      data
+    };
   }
 
   private async ensureClient(clientId: string): Promise<LanguageClient> {

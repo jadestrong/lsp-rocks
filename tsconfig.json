@@ -1,8 +1,8 @@
 {
   "compileOnSave": true,
   "compilerOptions": {
-    "target": "es2017",
-    "module": "commonjs",
+    "target": "esnext",
+    "module": "es2020",
     "strict": true,
     "noImplicitAny": false,
     "noImplicitThis": false,

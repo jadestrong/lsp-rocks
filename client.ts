@@ -1,6 +1,6 @@
-import * as Is from "./util";
 import * as fs from "fs";
 import { ChildProcess, spawn } from "child_process";
+import * as Is from "./util";
 
 import {
   CancellationToken,
