@@ -492,7 +492,7 @@ File paths with spaces are only supported inside strings."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-lsp-rocks))
-    (prefix (and lsp-rocks-is-started (company-grab-symbol)))
+    (prefix (and lsp-rocks-is-started lsp-rocks-mode (company-grab-symbol)))
     (candidates (cons :async (lambda (callback)
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)

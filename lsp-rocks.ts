@@ -85,6 +85,8 @@ export class LspRocks {
       if (this._server?.logger) {
         this._server.logger.level = isDebug ? 'debug' : 'off';
       }
+
+      message_emacs(`LSP-ROCKS :: Server logging ${isDebug ? 'enabled' : 'disabled'}`)
     })
 
     this._server?.defineMethod('get-elrpc-logfile', async () => {
