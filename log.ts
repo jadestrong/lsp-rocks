@@ -1,4 +1,4 @@
-export let IS_DEBUG = true;
+export let IS_DEBUG = false;
 
 export const toggleDebug = () => {
   IS_DEBUG = !IS_DEBUG
