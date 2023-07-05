@@ -2,7 +2,7 @@
   "compileOnSave": true,
   "compilerOptions": {
     "target": "esnext",
-    "module": "es2020",
+    "module": "commonjs",
     "strict": true,
     "noImplicitAny": false,
     "noImplicitThis": false,

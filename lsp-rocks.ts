@@ -54,7 +54,7 @@ export class LspRocks {
     this._server?.defineMethod('lsp-rocks--toggle-trace-io', async () => {
       const isDebug = toggleDebug()
       if (this._server?.logger) {
-        this._server.logger.level = isDebug ? 'debug' : 'off';
+        this._server.logger.level = isDebug ? 'debug' : 'info';
       }
 
       message_emacs(`LSP-ROCKS :: Server logging ${isDebug ? 'enabled' : 'disabled'}`)
