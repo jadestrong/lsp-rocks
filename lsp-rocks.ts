@@ -2,6 +2,7 @@ import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
 import { get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 import { toggleDebug } from './log';
+// import { importLangServers } from './utils/importLangServers';
 
 interface InitParams {
   language: string;
@@ -29,10 +30,14 @@ export class LspRocks {
   readonly _clients: Map<string, LanguageClient>;
 
   readonly _recentRequests: Map<string, any>;
+  _langServerMap: Record<string, any>
 
   constructor() {
     this._clients = new Map();
     this._recentRequests = new Map();
+    // importLangServers().then(configs => {
+    //   this._langServerMap = configs
+    // })
   }
 
   public async start() {
@@ -51,12 +56,11 @@ export class LspRocks {
       return response?.data
     })
 
-    this._server?.defineMethod('lsp-rocks--toggle-trace-io', async () => {
+    this._server?.defineMethod('lsp-rocks--toggle-trace-io', () => {
       const isDebug = toggleDebug()
       if (this._server?.logger) {
         this._server.logger.level = isDebug ? 'debug' : 'info';
       }
-
       message_emacs(`LSP-ROCKS :: Server logging ${isDebug ? 'enabled' : 'disabled'}`)
     })
 

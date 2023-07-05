@@ -88,6 +88,8 @@ import { SignatureHelpFeature } from "./features/signatureHelp";
 import { PrepareRenameFeature, RenameFeature } from "./features/rename";
 import { logger, message_emacs } from "./epc-utils";
 import { ConfigurationFeature } from "./features/configuration";
+import { Logger } from "pino";
+import { createLogger } from "./logger";
 
 enum ClientState {
   Initial = "initial",
@@ -252,7 +254,8 @@ function createConnection(
   output: MessageWriter,
   errorHandler: ConnectionErrorHandler,
   closeHandler: ConnectionCloseHandler,
-  options?: ConnectionOptions
+  options?: ConnectionOptions,
+  logger?: Logger
 ): ProtocolConnection {
   const connection = createProtocolConnection(input, output, myConsole, options);
   connection.onError((data) => {
@@ -264,9 +267,12 @@ function createConnection(
   connection.trace(Trace.Verbose, {
     log(messageOrDataObject: string | any, data?: string) {
       if (Is.string(messageOrDataObject)) {
-        logTrace(messageOrDataObject, data)
+        // logTrace(messageOrDataObject, data)
+        const msg = `[Trace - ${(new Date().toLocaleTimeString())}] ${messageOrDataObject}\n${data}`;
+        logger?.info(msg);
       } else {
-        logObjectTrace(messageOrDataObject)
+        // logObjectTrace(messageOrDataObject)
+        logger?.info(`[Trace - ${(new Date().toLocaleTimeString())}] `, JSON.stringify(data))
       }
     }
   })
@@ -296,6 +302,8 @@ export class LanguageClient {
   readonly _name: string;
 
   _initializationOptions: any;
+
+  logger: Logger;
 
   private readonly _serverOptions: ServerOptions;
 
@@ -347,6 +355,8 @@ export class LanguageClient {
         supportHtml: true,
       },
     };
+
+    this.logger = createLogger(language)
 
     this.registerBuiltinFeatures();
   }
@@ -867,7 +877,8 @@ export class LanguageClient {
       transports.writer,
       errorHandler,
       closeHandler,
-      this._clientOptions.connectionOptions
+      this._clientOptions.connectionOptions,
+      this.logger
     );
     return this._connection;
   }

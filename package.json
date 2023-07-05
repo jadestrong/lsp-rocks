@@ -19,6 +19,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "pino": "^8.14.1",
+    "pino-pretty": "^10.0.1",
     "ts-elparser": "file:../../../../../Documents/Github/ts-elparser",
     "ts-elrpc": "file:../../../../../Documents/Github/ts-elrpc",
     "vscode-jsonrpc": "^8.0.2",

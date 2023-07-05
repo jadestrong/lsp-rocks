@@ -1,7 +1,10 @@
 import { join } from 'node:path'
 import * as fs from 'node:fs'
 
-const tailwindcss = {
+export default {
+  name: 'tailwindcss',
+  command: 'tailwindcss-language-server',
+  args: ['--stdio'],
   supportExtensions: ['tsx'],
   settings: {
     "userLanguages": {
@@ -54,5 +57,3 @@ const tailwindcss = {
     return false;
   }
 }
-
-export default tailwindcss
