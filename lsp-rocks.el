@@ -540,8 +540,10 @@ File paths with spaces are only supported inside strings."
 (defun lsp-rocks--did-save ()
   "Send textDocument/didSave notification."
   (lsp-rocks--request "textDocument/didSave"
-                      (append `(:text ,(buffer-substring-no-properties (point-min) (point-max)))
-                              (lsp-rocks--TextDocumentIdentifier))))
+                      (lsp-rocks--TextDocumentIdentifier)
+                      ;; (append `(:text ,(buffer-substring-no-properties (point-min) (point-max)))
+                      ;;         )
+                      ))
 
 (defun lsp-rocks--completion (prefix)
   (lsp-rocks--request "textDocument/completion" (lsp-rocks--completion-params prefix)))
