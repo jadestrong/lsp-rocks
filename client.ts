@@ -238,17 +238,6 @@ const myConsole = {
     },
 };
 
-function logTrace(message: string, data?: any) {
-  const msg = `[Trace - ${(new Date().toLocaleTimeString())}] ${message}`;
-  logger.info(msg, data ? JSON.stringify(data) : undefined);
-}
-
-function logObjectTrace(data: any) {
-  if (data) {
-    logger.info(`[Trace - ${(new Date().toLocaleTimeString())}] `, JSON.stringify(data))
-  }
-}
-
 function createConnection(
   input: MessageReader,
   output: MessageWriter,
@@ -268,11 +257,11 @@ function createConnection(
     log(messageOrDataObject: string | any, data?: string) {
       if (Is.string(messageOrDataObject)) {
         // logTrace(messageOrDataObject, data)
-        const msg = `[Trace - ${(new Date().toLocaleTimeString())}] ${messageOrDataObject}\n${data}`;
+        const msg = `${messageOrDataObject}\n${data}`;
         logger?.info(msg);
       } else {
         // logObjectTrace(messageOrDataObject)
-        logger?.info(`[Trace - ${(new Date().toLocaleTimeString())}] `, JSON.stringify(data))
+        logger?.info(JSON.stringify(data))
       }
     }
   })
@@ -319,7 +308,7 @@ export class LanguageClient {
 
   private _clientInfo: any;
 
-  private _initializeResult: InitializeResult | undefined;
+  // private _initializeResult: InitializeResult | undefined;
 
   private _capabilities!: ServerCapabilities;
   // 记录 client/registerCapability 返回注册的能力
