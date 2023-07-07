@@ -1067,9 +1067,12 @@ Doubles as an indicator of snippet support."
   (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end)))
 
 (defun lsp-rocks--after-change (begin end len)
-  (setq lsp-rocks--current-file-version (1+ lsp-rocks--current-file-version))
-  (lsp-rocks--did-change begin end len)
-  (lsp-rocks--signature-help t 3 nil))
+  (save-match-data
+    (let ((inhibit-quit t))
+      (when (not revert-buffer-in-progress-p)
+        (setq lsp-rocks--current-file-version (1+ lsp-rocks--current-file-version))
+        (lsp-rocks--did-change begin end len)
+        (lsp-rocks--signature-help t 3 nil)))))
 
 (defun lsp-rocks--before-revert-hook ()
   (lsp-rocks--did-close))
