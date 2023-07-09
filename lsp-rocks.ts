@@ -2,6 +2,8 @@ import { LanguageClient } from './client';
 import { RPCServer } from 'ts-elrpc';
 import { get_emacs_func_result, init_epc_server, logger, message_emacs, send_response_to_emacs } from './epc-utils';
 import { toggleDebug } from './log';
+import { TextDocumentIdentifier } from 'vscode-languageserver-protocol';
+import { URI } from 'vscode-uri';
 // import { importLangServers } from './utils/importLangServers';
 
 interface InitParams {
@@ -20,7 +22,10 @@ interface Message {
 interface RequestMessage extends Message {
   lang: string;
   project: string;
-  params: any;
+  params: {
+    textDocument: TextDocumentIdentifier
+    [key: string]: any
+  };
 }
 
 export class LspRocks {
@@ -42,7 +47,7 @@ export class LspRocks {
 
   public async start() {
     this._server = await init_epc_server();
-    this._server?.defineMethod('message', async (message: Message) => {
+    this._server?.defineMethod('message', async (message: RequestMessage) => {
       this._recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
       if (response?.data != null) {
@@ -50,7 +55,7 @@ export class LspRocks {
       }
     });
 
-    this._server?.defineMethod('request', async (message: Message) => {
+    this._server?.defineMethod('request', async (message: RequestMessage) => {
       this._recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
       return response?.data
@@ -69,14 +74,15 @@ export class LspRocks {
     })
   }
 
-  public async messageHandler(msg: Message) {
-    const { id, cmd } = msg;
-    logger.info(`receive message => id: ${msg.id}, cmd: ${msg.cmd}, params: ${JSON.stringify((msg as any).params)}`);
+  public async messageHandler(req: RequestMessage) {
+    const { id, cmd, params } = req;
+    params.textDocument.uri = URI.file(params.textDocument.uri).toString()
+    logger.info(`receive message => id: ${id}, cmd: ${cmd}, params: ${JSON.stringify(req.params)}`);
     const logLabel = `${id}:${cmd}`;
     console.time(logLabel)
-    const req = msg as RequestMessage;
+    // const req = msg;
     let data: any = null;
-    const { textDocument: { uri } } = req.params
+    const { textDocument: { uri } } = params
     let projectRoot = this._filePathToProject.get(uri);
 
     if (!projectRoot) {

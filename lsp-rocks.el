@@ -233,14 +233,6 @@
 
 (defvar lsp-rocks--server-process nil)
 
-(defvar lsp-rocks--uri-file-prefix (pcase system-type
-                                     (`windows-nt "file:///")
-                                     (_ "file://"))
-  "Prefix for a file-uri.")
-
-(defvar-local lsp-rocks-buffer-uri nil
-  "If set, return it instead of calculating it using `buffer-file-name'.")
-
 (defcustom lsp-rocks-mark-ring-max-size 16
   "Maximum size of lsp-rocks mark ring.  \
 Start discarding off end if gets this big."
@@ -360,24 +352,10 @@ Setting this to nil or 0 will turn off the indicator."
          (widen)
          (save-excursion ,@form)))))
 
-(defun lsp-rocks--buffer-uri ()
-  "Return URI of the current buffer."
-  (or lsp-rocks-buffer-uri (and buffer-file-name (lsp-rocks--path-to-uri buffer-file-name))))
-
 (defun lsp-rocks--buffer-content ()
   "Return whole content of the current buffer."
   (lsp-rocks--save-restriction-and-excursion
     (buffer-substring-no-properties (point-min) (point-max))))
-
-(defconst lsp-rocks--url-path-allowed-chars
-  (url--allowed-chars (append '(?/) url-unreserved-chars))
-  "`url-unreserved-chars' with additional delim ?/.
-This set of allowed chars is enough for hexifying local file paths.")
-
-(defun lsp-rocks--path-to-uri (path)
-  "Convert PATH to a uri."
-  (concat lsp-rocks--uri-file-prefix
-          (url-hexify-string (file-truename path) lsp-rocks--url-path-allowed-chars)))
 
 (defun lsp-rocks--buffer-language-conf ()
   "Get language corresponding current buffer."
@@ -402,7 +380,6 @@ This set of allowed chars is enough for hexifying local file paths.")
 
 (defun lsp-rocks--inited()
   "When create LanguageClient successed, called by lsp-rocks server."
-  (setq lsp-rocks-buffer-uri (lsp-rocks--buffer-uri))
   (setq lsp-rocks-is-started t)
   (run-hooks 'lsp-rocks-started-hook)
   (lsp-rocks--did-open))
@@ -537,7 +514,7 @@ File paths with spaces are only supported inside strings."
     (candidates (cons :async (lambda (callback)
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
-                               (lsp-rocks--completion arg))))
+                               (lsp-rocks--completion))))
     (no-cache t)
     (sorted t)
     (annotation (format " (%s)" (lsp-rocks--candidate-kind arg)))
@@ -551,7 +528,7 @@ File paths with spaces are only supported inside strings."
   (if buffer-file-name
       (lsp-rocks--request "textDocument/didOpen"
                           (list :textDocument
-                                (list :uri (lsp-rocks--buffer-uri)
+                                (list :uri buffer-file-name
                                       :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
                                       :version 0
                                       :text (buffer-substring-no-properties (point-min) (point-max)))))
@@ -565,7 +542,7 @@ File paths with spaces are only supported inside strings."
   "Send textDocument/didChange notification."
   (lsp-rocks--request "textDocument/didChange"
                       (list :textDocument
-                            (list :uri (lsp-rocks--buffer-uri) :version lsp-rocks--current-file-version)
+                            (list :uri buffer-file-name :version lsp-rocks--current-file-version)
                             :contentChanges
                             (list
                              (list :range (list :start lsp-rocks--before-change-begin-pos :end lsp-rocks--before-change-end-pos)
@@ -586,22 +563,11 @@ File paths with spaces are only supported inside strings."
                       ;;         )
                       ))
 
-(defun lsp-rocks--completion (prefix)
-  (lsp-rocks--request "textDocument/completion" (lsp-rocks--completion-params prefix)))
-
-(defun lsp-rocks--completion-params (prefix)
-  "Make textDocument/completion params."
-  ;; 移除 prefix 携带的 text-properties 只能传字符串
-  ;; (set-text-properties 0 (length prefix) nil prefix)
-  (append `(
-            ;; :prefix ,prefix
-            :line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
-            :column ,(current-column)
-            ;; :context ,(if (member prefix lsp-rocks--trigger-characters)
-            ;;               `(:triggerKind 2 :triggerCharacter ,prefix)
-            ;;             '(:triggerKind 1))
-            )
-          (lsp-rocks--TextDocumentPosition)))
+(defun lsp-rocks--completion ()
+  (lsp-rocks--request "textDocument/completion"
+                      (append `(:line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
+                                :column ,(current-column))
+                              (lsp-rocks--TextDocumentPosition))))
 
 (defun lsp-rocks--resolve (label)
   (lsp-rocks--request "completionItem/resolve"
@@ -646,7 +612,7 @@ File paths with spaces are only supported inside strings."
   "Send signatureHelp request with params."
   ;; (lsp-rocks--request "textDocument/signatureHelp"
   ;;                     (list :textDocument
-  ;;                           (list :uri (lsp-rocks--buffer-uri))
+  ;;                           (list :uri buffer-file-name)
   ;;                           :position
   ;;                           (lsp-rocks--position)
   ;;                           :context
@@ -886,10 +852,10 @@ Doubles as an indicator of snippet support."
                               (widen)
                               (let* ((beg (lsp-rocks--lsp-position-to-point start))
                                      (end (lsp-rocks--lsp-position-to-point end))
-                                     (bol (progn (goto-char beg) (point-at-bol)))
-                                     (summary (buffer-substring bol (point-at-eol)))
+                                     (bol (progn (goto-char beg) (line-beginning-position)))
+                                     (summary (buffer-substring bol (line-end-position)))
                                      (hi-beg (- beg bol))
-                                     (hi-end (- (min (point-at-eol) end) bol)))
+                                     (hi-end (- (min (line-end-position) end) bol)))
                                 (when summary
                                   (add-face-text-property hi-beg hi-end 'xref-match t summary))
                                 (xref-make summary
@@ -1023,7 +989,7 @@ Doubles as an indicator of snippet support."
 (defun lsp-rocks--TextDocumentIdentifier ()
   "Make a TextDocumentIdentifier object."
   `(:textDocument
-    (:uri ,(lsp-rocks--buffer-uri))))
+    (:uri ,(buffer-file-name))))
 
 (defun lsp-rocks--TextDocumentPosition ()
   "Make a TextDocumentPosition object."
