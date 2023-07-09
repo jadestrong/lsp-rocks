@@ -95,6 +95,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       return [];
     }
 
+    resp.items.forEach(it => labelCompletionMap.set(it.label, it));
     const completions = filterItems(prefix, resp.items).slice(0, this.max_completion_size)
     // const completions = resp
     //   .items
@@ -115,7 +116,6 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
     //   const resolvedHead = await this.client.sendRequest(CompletionResolveRequest.type, head);
     //   completions.unshift(resolvedHead);
     // }
-    completions.forEach(it => labelCompletionMap.set(it.label, it));
     return completions;
   }
 

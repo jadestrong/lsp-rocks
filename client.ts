@@ -308,7 +308,7 @@ export class LanguageClient {
 
   private _clientInfo: any;
 
-  // private _initializeResult: InitializeResult | undefined;
+  private _initializeResult: InitializeResult | undefined;
 
   private _capabilities!: ServerCapabilities;
   // 记录 client/registerCapability 返回注册的能力

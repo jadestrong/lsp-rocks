@@ -28,12 +28,20 @@
 (require 'seq)
 (require 's)
 (require 'subr-x)
-(require 'websocket)
 (require 'lsp-rocks-xref)
 (require 'posframe)
 (require 'markdown-mode)
 (require 'company)
 (require 'epc)
+(require 'yasnippet nil t)
+
+(declare-function projectile-project-root "ext:projectile")
+(declare-function yas-expand-snippet "ext:yasnippet")
+
+(defvar yas-inhibit-overlay-modification-protection)
+(defvar yas-indent-line)
+(defvar yas-wrap-around-region)
+(defvar yas-also-auto-indent-first-line)
 
 (defvar lsp-rocks-process nil
   "The LSP-ROCKS Process.")
@@ -98,15 +106,6 @@
   "The Python interpreter used to run cli.ts."
   :type 'string
   :group 'lsp-rocks)
-
-;; (defcustom lsp-rocks-enable-debug nil
-;;   "If you got segfault error, please turn this option.
-;; Then LSP-ROCKS will start by gdb, please send new issue with `*lsp-rocks*' buffer content when next crash."
-;;   :type 'boolean)
-
-;; (defcustom lsp-rocks-enable-profile nil
-;;   "Enable this option to output performance data to ~/lsp-rocks.prof."
-;;   :type 'boolean)
 
 (defun lsp-rocks--user-emacs-directory ()
   "Get lang server with project path, file path or file extension."
@@ -350,9 +349,25 @@ Setting this to nil or 0 will turn off the indicator."
                 (project-roots project))))))
    default-directory))
 
+(defvar lsp-rocks--already-widened nil)
+
+(defmacro lsp-rocks--save-restriction-and-excursion (&rest form)
+  (declare (indent 0) (debug t))
+  `(if lsp-rocks--already-widened
+       (save-excursion ,@form)
+     (let* ((lsp-rocks--already-widened t))
+       (save-restriction
+         (widen)
+         (save-excursion ,@form)))))
+
 (defun lsp-rocks--buffer-uri ()
   "Return URI of the current buffer."
   (or lsp-rocks-buffer-uri (and buffer-file-name (lsp-rocks--path-to-uri buffer-file-name))))
+
+(defun lsp-rocks--buffer-content ()
+  "Return whole content of the current buffer."
+  (lsp-rocks--save-restriction-and-excursion
+    (buffer-substring-no-properties (point-min) (point-max))))
 
 (defconst lsp-rocks--url-path-allowed-chars
   (url--allowed-chars (append '(?/) url-unreserved-chars))
@@ -415,42 +430,68 @@ This set of allowed chars is enough for hexifying local file paths.")
         ("textDocument/rename" (lsp-rocks--process-rename data))
         ))))
 
+(defun lsp-rocks--expand-snippet (snippet &optional start end expand-env)
+  "Wrapper of `yas-expand-snippet' with all of it arguments.
+The snippet will be convert to LSP style and indent according to
+LSP server according to
+LSP server result."
+  (let* ((inhibit-field-text-motion t)
+         (yas-wrap-around-region nil)
+         (yas-indent-line 'none)
+         (yas-also-auto-indent-first-line nil))
+    (yas-expand-snippet snippet start end expand-env)))
 
-;; (defconst lsp-rocks--trigger-characters
-;;   '("." "\"" "'" "/" "@" "<"))
+(defun lsp-rocks--sort-edits (edits)
+  (sort edits #'(lambda (edit-a edit-b)
+                  (let* ((range-a (plist-get edit-a :range))
+                         (range-b (plist-get edit-b :range))
+                         (start-a (plist-get range-a :start))
+                         (start-b (plist-get range-b :start))
+                         (end-a (plist-get range-a :end))
+                         (end-b (plist-get range-a :end))
+                         )
+                    (if (lsp-rocks--position-equal start-a start-b)
+                        (lsp-rocks--position-compare end-a end-b)
+                      (lsp-rocks--position-compare start-a start-b))))))
 
-;; (defun lsp-rocks--completion-prefix ()
-;;   "Return the completion prefix.
-;; Return value is compatible with the `prefix' command of a company backend.
-;; Return nil if no completion should be triggered.  Return a string
-;; as the prefix to be completed, or a cons cell of (prefix . t) to bypass
-;; `company-minimum-prefix-length' for trigger characters."
-;;   (or (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
-;;                                                     (length trigger-char))
-;;                                                   lsp-rocks--trigger-characters)))
-;;              (trigger-regex (s-join "\\|" (mapcar #'regexp-quote lsp-rocks--trigger-characters)))
-;;              (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
-;;         ;; Some major modes define trigger characters as part of the symbol. For
-;;         ;; example "@" is considered a vaild part of symbol in java-mode.
-;;         ;; Company will grab the trigger character as part of the prefix while
-;;         ;; the server doesn't. Remove the leading trigger character to solve
-;;         ;; this issue.
-;;         (let* ((symbol (if (consp symbol-cons)
-;;                            (car symbol-cons)
-;;                          symbol-cons))
-;;                (trigger-char (seq-find (lambda (trigger-char)
-;;                                          (s-starts-with? trigger-char symbol))
-;;                                        lsp-rocks--trigger-characters)))
-;;           (if trigger-char
-;;               (cons (substring symbol (length trigger-char)) t)
-;;             symbol-cons)))
-;;       (company-grab-symbol)))
+(defun lsp-rocks--apply-text-edit (edit)
+  "Apply the edits ddescribed in the TextEdit objet in TEXT-EDIT."
+  (let* ((start (plist-get (plist-get edit :range) :start))
+         (end (plist-get (plist-get edit :range) :end))
+         (new-text (plist-get edit :new-text)))
+    (setq new-text (s-replace "\r" "" (or new-text "")))
+    (plist-put edit :new-text new-text)
+    (goto-char start)
+    (delete-region start end)
+    (insert new-text)))
+
+(defun lsp-rocks--apply-text-edits (edits)
+  "Apply the EDITS described in the TextEdit[] object."
+  (unless (seq-empty-p edits)
+    (atomic-change-group
+      (let* ((change-group (prepare-change-group))
+             (howmany (length edits))
+             (message (format "Applying %s edits to `%s' ..." howmany (current-buffer)))
+             (_ (message message))
+             (reporter (make-progress-reporter message 0 howmany))
+             (done 0))
+        (unwind-protect
+            (dolist (edit (lsp-rocks--sort-edits (reverse edits)))
+              (progress-reporter-update reporter (cl-incf done))
+              (lsp-rocks--apply-text-edit edit)
+              (when-let* ((insert-text-format (plist-get edit :insert-text-format))
+                          (start (plist-get (plist-get edit :range) :start))
+                          (new-text (plist-get edit :new-text)))
+                (when (eq insert-text-format 2)
+                  (goto-char (+ start (length new-text)))
+                  (lsp-rocks--expand-snippet new-text start (point)))))
+          (undo-amalgamate-change-group change-group)
+          (progress-reporter-done reporter))))))
 
 (defun lsp-rocks--company-post-completion (candidate)
   "Replace a CompletionItem's label with its insertText.  Apply text edits.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (message "post-completion %s" candidate)
   (let* ((item (get-text-property 0 'lsp-rocks--item candidate))
          (label (plist-get item :label))
          ;; (start (- (point) (length label)))
@@ -492,7 +533,7 @@ File paths with spaces are only supported inside strings."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-lsp-rocks))
-    (prefix (and lsp-rocks-is-started lsp-rocks-mode (company-grab-symbol)))
+    (prefix (and lsp-rocks-mode lsp-rocks-is-started (cons (company-grab-symbol) t)))
     (candidates (cons :async (lambda (callback)
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
@@ -718,24 +759,6 @@ relied upon."
 (defun lsp-rocks--make-candidate (item)
   "Convert a Completion ITEM to a string."
   (propertize (plist-get item :label) 'lsp-rocks--item item))
-
-;; (defun lsp-rocks--parse-completion (completions)
-;;   "Parse LPS server returned COMPLETIONS."
-;;   (let* ((head (car completions))
-;;          (tail (cdr completions))
-;;          (head-label (plist-get head :label)))
-;;     (put-text-property 0 1 'kind (plist-get head :kind) head-label)
-;;     (put-text-property 0 1 'detail (plist-get head :detail) head-label)
-;;     (put-text-property 0 1 'resolved-item head head-label)
-;;     (cons head-label
-;;           (cl-mapcar (lambda (it)
-;;                        (let* ((ret (plist-get it :label))
-;;                               (kind (plist-get it :kind))
-;;                               (detail (plist-get it :detail)))
-;;                          (put-text-property 0 1 'kind kind ret)
-;;                          (put-text-property 0 1 'detail detail ret)
-;;                          ret))
-;;                      tail))))
 
 (defun lsp-rocks--lsp-position-to-point (pos-plist &optional marker)
   "Convert LSP position POS-PLIST to Emacs point.
@@ -1037,6 +1060,39 @@ Doubles as an indicator of snippet support."
     (goto-char pos)
     (lsp-rocks--position)))
 
+(defun lsp-rocks--line-character-to-point (line character)
+  "Return the point for character CHARACTER on line LINE."
+  (let ((inhibit-field-text-motion t))
+    (lsp-rocks--save-restriction-and-excursion
+      (goto-char (point-min))
+      (forward-line line)
+      ;; server may send character position beyond the current line and we
+      ;; sould fallback to line end.
+      (let* ((line-end (line-end-position)))
+        (if (> character (- line-end (point)))
+            line-end
+          (forward-char character)
+          (point))))))
+
+(defun lsp-rocks--position-point (pos)
+  "Convert `Position' object POS to a point."
+  (let* ((line (plist-get pos :line))
+         (character (plist-get pos :character)))
+    (lsp-rocks--line-character-to-point line character)))
+
+(defun lsp-rocks--position-equal (pos-a pos-b)
+  "Return whether POS-A and POS-B positions are equal."
+  (and (= (plist-get pos-a :line) (plist-get pos-b :line))
+       (= (plist-get pos-a :character) (plist-get pos-b :character))))
+
+(defun lsp-rocks--position-compare (pos-a pos-b)
+  "Return t if POS-A if greater thatn POS-B."
+  (let* ((line-a (plist-get pos-a :line))
+         (line-b (plist-get pos-b :line)))
+    (if (= line-a line-b)
+        (> (plist-get pos-a :character) (plist-get pos-b :character))
+      (> line-a line-b))))
+
 (defun lsp-rocks--calculate-column ()
   "Calculate character offset of cursor in current line."
   (/ (- (length
@@ -1063,8 +1119,9 @@ Doubles as an indicator of snippet support."
     (concat (lsp-rocks--random-alnum) (lsp-rocks--random-string (1- n)))))
 
 (defun lsp-rocks--before-change (begin end)
-  (setq-local lsp-rocks--before-change-begin-pos (lsp-rocks--point-position begin))
-  (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end)))
+  (save-match-data
+    (setq-local lsp-rocks--before-change-begin-pos (lsp-rocks--point-position begin))
+    (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end))))
 
 (defun lsp-rocks--after-change (begin end len)
   (save-match-data
@@ -1087,7 +1144,7 @@ Doubles as an indicator of snippet support."
   (lsp-rocks--did-save))
 
 (defun lsp-rocks--kill-buffer-hook ()
-  (setq lsp-rocks-mode nil)
+  (lsp-rocks-mode -1)
   (lsp-rocks--did-close))
 
 (defun lsp-rocks--post-command-hook ()
