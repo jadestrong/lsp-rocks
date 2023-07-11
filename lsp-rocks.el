@@ -1022,7 +1022,7 @@ Doubles as an indicator of snippet support."
 
 (defun lsp-rocks--point-position (pos)
   "Get position of POS."
-  (save-excursion
+  (lsp-rocks--save-restriction-and-excursion
     (goto-char pos)
     (lsp-rocks--position)))
 
@@ -1085,9 +1085,8 @@ Doubles as an indicator of snippet support."
     (concat (lsp-rocks--random-alnum) (lsp-rocks--random-string (1- n)))))
 
 (defun lsp-rocks--before-change (begin end)
-  (save-match-data
-    (setq-local lsp-rocks--before-change-begin-pos (lsp-rocks--point-position begin))
-    (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end))))
+  (setq-local lsp-rocks--before-change-begin-pos (lsp-rocks--point-position begin))
+  (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end)))
 
 (defun lsp-rocks--after-change (begin end len)
   (save-match-data
