@@ -547,13 +547,14 @@ export class LanguageClient {
       ? require(langSreverConfig)
       : {};
     this._initializationOptions = initializationOptions
+
     const initParams: InitializeParams = {
-      processId: null,
+      processId: process.pid,
       clientInfo,
       locale: "en",
       rootPath: this._project,
       rootUri: pathToFileURL(this._project).toString(),
-      capabilities: this.computeClientCapabilities(),
+      capabilities: this.getClientCapabilities(),
       initializationOptions,
       workspaceFolders: [
         {
@@ -567,6 +568,7 @@ export class LanguageClient {
   }
 
   public registerFeature(feature: DynamicFeature<any>): void {
+    // 这里收集 feature
     this._features.push(feature);
     if (DynamicFeature.is(feature)) {
       const registrationType = feature.registrationType;
@@ -602,14 +604,13 @@ export class LanguageClient {
     }
   }
 
-  private computeClientCapabilities(): ClientCapabilities {
+  private getClientCapabilities(): ClientCapabilities {
     const result: ClientCapabilities = {};
-    ensure(result, "workspace").applyEdit = true;
 
-    const workspaceEdit = ensure(
-      ensure(result, "workspace"),
-      "workspaceEdit"
-    );
+    // workspace
+    const workspace = ensure(result, "workspace");
+    workspace.applyEdit = true;
+    const workspaceEdit = ensure(workspace, "workspaceEdit");
     workspaceEdit.documentChanges = true;
     workspaceEdit.resourceOperations = [
       ResourceOperationKind.Create,
@@ -622,10 +623,7 @@ export class LanguageClient {
       groupsOnLabel: true,
     };
 
-    const diagnostics = ensure(
-      ensure(result, "textDocument"),
-      "publishDiagnostics"
-    );
+    const diagnostics = ensure(ensure(result, "textDocument"), "publishDiagnostics");
     diagnostics.relatedInformation = true;
     diagnostics.versionSupport = false;
     diagnostics.tagSupport = {
@@ -640,23 +638,11 @@ export class LanguageClient {
     const showDocument = ensure(windowCapabilities, "showDocument");
     showDocument.support = true;
 
-    const generalCapabilities = ensure(result, "general");
-    generalCapabilities.staleRequestSupport = {
-      cancel: true,
-      retryOnContentModified: Array.from(
-        LanguageClient.RequestsToCancelOnContentModified
-      ),
-    };
-    generalCapabilities.regularExpressions = {
-      engine: "ECMAScript",
-      version: "ES2020",
-    };
-    generalCapabilities.markdown = {
-      parser: "marked",
-      version: "1.1.0",
-    };
-    generalCapabilities.positionEncodings = ["utf-16"];
+    // general
+    const general = ensure(result, "general");
+    general.positionEncodings = ["utf-16", 'utf-32'];
 
+    // others
     for (const feature of this._features) {
       feature.fillClientCapabilities(result);
     }

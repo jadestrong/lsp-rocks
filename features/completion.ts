@@ -43,8 +43,6 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       commitCharactersSupport: true,
       documentationFormat: [MarkupKind.Markdown, MarkupKind.PlainText],
       deprecatedSupport: true,
-      // preselectSupport: true,
-      // tagSupport: { valueSet: [CompletionItemTag.Deprecated] },
       insertReplaceSupport: true,
       insertTextModeSupport: { valueSet: [InsertTextMode.asIs, InsertTextMode.adjustIndentation] },
       labelDetailsSupport: true
