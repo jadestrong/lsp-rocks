@@ -78,9 +78,7 @@ export class LspRocks {
     const { id, cmd, params } = req;
     params.textDocument.uri = URI.file(params.textDocument.uri).toString()
     logger.info(`receive message => id: ${id}, cmd: ${cmd}, params: ${JSON.stringify(req.params)}`);
-    const logLabel = `${id}:${cmd}`;
-    console.time(logLabel)
-    // const req = msg;
+
     let data: any = null;
     const { textDocument: { uri } } = params
     let projectRoot = this._filePathToProject.get(uri);
@@ -90,7 +88,6 @@ export class LspRocks {
       this._filePathToProject.set(uri, projectRoot);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const client = await this.ensureClient(projectRoot);
 
     if (this._recentRequests.get(req.cmd) != req.id && req.cmd != 'textDocument/didChange') {
@@ -101,7 +98,6 @@ export class LspRocks {
     if (this._recentRequests.get(req.cmd) != req.id) {
       return;
     }
-    console.timeLog(logLabel)
     return {
       id,
       cmd,

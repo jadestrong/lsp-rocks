@@ -1,9 +1,24 @@
-import { type CompletionItem } from "vscode-languageserver-protocol";
+import { InsertReplaceEdit, TextEdit, type CompletionItem } from "vscode-languageserver-protocol";
+import { byteSlice } from "./string";
 
 interface ExtendCompletionItem {
   positions?: ReadonlyArray<number>
   score: number
   originItem: CompletionItem
+}
+
+function guessPrefix(pretext: string, item: CompletionItem) {
+  let startCharacter: number;
+  const { textEdit } = item;
+  if (textEdit && InsertReplaceEdit.is(textEdit)) {
+    startCharacter = textEdit.replace.start.character;
+  } else if (textEdit) {
+    startCharacter = textEdit.range.start.character;
+  } else {
+    startCharacter =  Math.max(...['"', '’', '‘', '.', '(', '[', ' '].map(char => pretext.lastIndexOf(char))) + 1;
+  }
+  const prefix = byteSlice(pretext, startCharacter).trim()
+  return prefix;
 }
 
 function filterItems(prefix: string, items: CompletionItem[]) {

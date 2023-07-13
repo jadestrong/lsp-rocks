@@ -154,7 +154,7 @@ export class LanguageClient {
 
   private _initializeResult: InitializeResult | undefined;
 
-  private _capabilities!: ServerCapabilities;
+  private _capabilities: ServerCapabilities;
   // 记录 client/registerCapability 返回注册的能力
   registeredServerCapabilities = new Map<Registration['method'], Registration>();
 
@@ -191,6 +191,7 @@ export class LanguageClient {
 
     this.logger = createLogger(language)
 
+    // TODO 哪些是 builtin 的？
     this.registerBuiltinFeatures();
   }
 
@@ -529,10 +530,10 @@ export class LanguageClient {
         );
       }
 
-      this.initializeFeatures();
       this._initializeResult = result;
       this.$state = ClientState.Running;
 
+      // TODO what?
       let textDocumentSyncOptions: TextDocumentSyncOptions | undefined =
         undefined;
       if (Is.number(result.capabilities.textDocumentSync)) {
@@ -560,12 +561,14 @@ export class LanguageClient {
         textDocumentSyncOptions = result.capabilities
           .textDocumentSync as TextDocumentSyncOptions;
       }
+
+      // 记录当前 client 支持的 server  capabilities
       this._capabilities = Object.assign({}, result.capabilities, {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
+      this.initializeFeatures(connection);
 
       await connection.sendNotification(InitializedNotification.type, {});
-      // this.info(`[sendNotification] ${InitializedNotification.method}`);
 
       return result;
     } catch (error) {
