@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess } from "child_process";
 import * as Is from "./util";
 
 import {
@@ -34,7 +34,6 @@ import {
   ShutdownRequest,
   TextDocumentSyncKind,
   TextDocumentSyncOptions,
-  createProtocolConnection,
   RequestHandler0,
   RequestHandler,
   GenericRequestHandler,
@@ -42,22 +41,14 @@ import {
   DocumentSelector,
   RegistrationParams,
   RegistrationRequest,
-  Trace,
   Registration,
 } from "vscode-languageserver-protocol";
 
 import {
   CancellationStrategy,
-  ConnectionOptions,
-  Message,
-  MessageReader,
   MessageSignature,
-  MessageWriter,
   RAL,
   ResponseError,
-  StreamMessageReader,
-  StreamMessageWriter,
-  generateRandomPipeName,
 } from "vscode-jsonrpc/node";
 import {
   DynamicFeature,
@@ -90,6 +81,8 @@ import { logger, message_emacs } from "./epc-utils";
 import { ConfigurationFeature } from "./features/configuration";
 import { Logger } from "pino";
 import { createLogger } from "./logger";
+import Connection, { ServerOptions } from "./connection";
+import data2String from "./utils/data2String";
 
 enum ClientState {
   Initial = "initial",
@@ -118,83 +111,6 @@ export enum State {
   Running = 2,
 }
 
-export enum TransportKind {
-  stdio,
-  ipc,
-  pipe,
-  socket,
-}
-
-export interface SocketTransport {
-  kind: TransportKind.socket;
-  port: number;
-}
-
-/**
- * To avoid any timing, pipe name or port number issues the pipe (TransportKind.pipe)
- * and the sockets (TransportKind.socket and SocketTransport) are owned by the
- * VS Code processes. The server process simply connects to the pipe / socket.
- * In node term the VS Code process calls `createServer`, then starts the server
- * process, waits until the server process has connected to the pipe / socket
- * and then signals that the connection has been established and messages can
- * be send back and forth. If the language server is implemented in a different
- * program language the server simply needs to create a connection to the
- * passed pipe name or port number.
- */
-export type Transport = TransportKind | SocketTransport;
-
-namespace Transport {
-  export function isSocket(
-    value: Transport | undefined
-  ): value is SocketTransport {
-    const candidate = value as SocketTransport;
-    return (
-      candidate &&
-      candidate.kind === TransportKind.socket &&
-      Is.number(candidate.port)
-    );
-  }
-}
-
-export type ServerOptions = Executable;
-
-export interface ExecutableOptions {
-  cwd?: string;
-  env?: any;
-  detached?: boolean;
-  shell?: boolean;
-}
-
-export interface Executable {
-  command: string;
-  transport?: Transport;
-  args?: string[];
-  options?: ExecutableOptions;
-}
-
-namespace Executable {
-  export function is(value: any): value is Executable {
-    return Is.string(value.command);
-  }
-}
-
-export interface MessageTransports {
-  reader: MessageReader;
-  writer: MessageWriter;
-  detached?: boolean;
-}
-
-export namespace MessageTransports {
-  export function is(value: any): value is MessageTransports {
-    const candidate: MessageTransports = value;
-    return (
-      candidate &&
-      MessageReader.is(value.reader) &&
-      MessageWriter.is(value.writer)
-    );
-  }
-}
-
 type ResolvedClientOptions = {
   stdioEncoding: string;
   initializationOptions?: any | (() => any);
@@ -210,78 +126,6 @@ type ResolvedClientOptions = {
   };
   disableDynamicRegister?: boolean
 };
-
-interface ConnectionErrorHandler {
-  (error: Error, message: Message | undefined, count: number | undefined): void;
-}
-
-interface ConnectionCloseHandler {
-  (): void;
-}
-
-const myConsole = {
-    error: function (...data: any[]): void {
-      const msg = data.map(item => JSON.stringify(item)).join(' ');
-      message_emacs(`[myConsole error] ${msg}`);
-    },
-    info: function (...data: any[]): void {
-      const msg = data.map(item => JSON.stringify(item)).join(' ');
-      message_emacs(`[myConsole info] ${msg}`);
-    },
-    log: function (...data: any[]): void {
-      const msg = data.map(item => JSON.stringify(item)).join(' ');
-      message_emacs(`[myConsole log] ${msg}`);
-    },
-    warn: function (...data: any[]): void {
-      const msg = data.map(item => JSON.stringify(item)).join(' ');
-      message_emacs(`[myConsole warn] ${msg}`);
-    },
-};
-
-function createConnection(
-  input: MessageReader,
-  output: MessageWriter,
-  errorHandler: ConnectionErrorHandler,
-  closeHandler: ConnectionCloseHandler,
-  options?: ConnectionOptions,
-  logger?: Logger
-): ProtocolConnection {
-  const connection = createProtocolConnection(input, output, myConsole, options);
-  connection.onError((data) => {
-    errorHandler(data[0], data[1], data[2]);
-  });
-  connection.onClose(closeHandler);
-
-  // NOTE trace log
-  connection.trace(Trace.Verbose, {
-    log(messageOrDataObject: string | any, data?: string) {
-      if (Is.string(messageOrDataObject)) {
-        // logTrace(messageOrDataObject, data)
-        const msg = `${messageOrDataObject}\n${data}`;
-        logger?.info(msg);
-      } else {
-        // logObjectTrace(messageOrDataObject)
-        logger?.info(JSON.stringify(data))
-      }
-    }
-  })
-  return connection;
-}
-
-function handleChildProcessStartError(process: ChildProcess, message: string) {
-  if (process === null) {
-    return Promise.reject<MessageTransports>(message);
-  }
-
-  return new Promise<MessageTransports>((_, reject) => {
-    process.on("error", (err) => {
-      reject(`${message} ${err}`);
-    });
-    // the error event should always be run immediately,
-    // but race on it just in case
-    setImmediate(() => reject(message));
-  });
-}
 
 export class LanguageClient {
   readonly _project: string;
@@ -316,7 +160,7 @@ export class LanguageClient {
 
   private _clientOptions: ResolvedClientOptions;
 
-  private _fileVersions: Map<string, number>;
+  // private _fileVersions: Map<string, number>;
 
   private _features: DynamicFeature<any>[];
 
@@ -333,7 +177,7 @@ export class LanguageClient {
     this._language = language;
     this._clientInfo = clientInfo;
     this._serverOptions = serverOptions;
-    this._fileVersions = new Map();
+    // this._fileVersions = new Map();
     this._features = [];
     this._dynamicFeatures = new Map();
     this._clientOptions = {
@@ -399,8 +243,6 @@ export class LanguageClient {
       );
     }
     try {
-      // await this.forceDocumentSync();
-      // logger.info(`[sendRequest] ${Is.toMethod(type)}`, ...params)
       return await this._connection?.sendRequest<R>(Is.toMethod(type), ...params);
     } catch (error) {
       this.error(`Sending request ${Is.toMethod(type)} failed. ` + (error as Error).message);
@@ -423,7 +265,6 @@ export class LanguageClient {
     }
     try {
       return this._connection?.onRequest(Is.toMethod(type), (...params) => {
-        // logger.info(`[onRequest] ${Is.toMethod(type)}`, ...params)
         return handler.call(null, ...params)
       })
     } catch (error) {
@@ -498,7 +339,11 @@ export class LanguageClient {
 
     this.$state = ClientState.Starting;
     try {
-      const connection = await this.createConnection();
+      const connection = await new Connection().createConnection(
+        this._serverOptions,
+        this._clientInfo.connectionOptions,
+        this.logger,
+      );
       connection.onNotification(LogMessageNotification.type, (message) => {
         switch (message.type) {
           case MessageType.Error:
@@ -516,7 +361,7 @@ export class LanguageClient {
       });
       connection.listen();
       this._connection = connection
-      this.initializeFeatures(connection)
+      this.initializeFeatures()
 
       connection.onRequest(RegistrationRequest.type, params =>
         this.handleRegistrationRequest(params)
@@ -650,7 +495,7 @@ export class LanguageClient {
     return result;
   }
 
-  private initializeFeatures(_connection: ProtocolConnection) {
+  private initializeFeatures() {
     const documentSelector = this._clientOptions.documentSelector
     for (const feature of this._features) {
       feature.initialize(this._capabilities, documentSelector)
@@ -684,7 +529,7 @@ export class LanguageClient {
         );
       }
 
-      this.initializeFeatures(connection);
+      this.initializeFeatures();
       this._initializeResult = result;
       this.$state = ClientState.Running;
 
@@ -835,29 +680,6 @@ export class LanguageClient {
     return [promise, resolve, reject];
   }
 
-  // TODO
-  private async createConnection(): Promise<ProtocolConnection> {
-    const errorHandler: ConnectionErrorHandler = (e) => {
-      message_emacs("errorHandler: " + e.message)
-    };
-
-    const closeHandler = () => {
-      //
-      message_emacs('closeHandler')
-    };
-
-    const transports = await this.createMessageTransports("utf8");
-    this._connection = createConnection(
-      transports.reader,
-      transports.writer,
-      errorHandler,
-      closeHandler,
-      this._clientOptions.connectionOptions,
-      this.logger
-    );
-    return this._connection;
-  }
-
   public async on(method: string, params: any) {
     return (
       this._dynamicFeatures.get(method) as RunnableDynamicFeature<
@@ -869,130 +691,39 @@ export class LanguageClient {
     ).run(params);
   }
 
-  public async didChange(params: any) {
-    this.sendNotification(DidChangeTextDocumentNotification.type, {
-      textDocument: {
-        uri: params.uri,
-        version: this.updateFileVersion(params.uri),
-      },
-      contentChanges: [params.contentChange],
-    });
-  }
+  // public async didChange(params: any) {
+  //   this.sendNotification(DidChangeTextDocumentNotification.type, {
+  //     textDocument: {
+  //       uri: params.uri,
+  //       version: this.updateFileVersion(params.uri),
+  //     },
+  //     contentChanges: [params.contentChange],
+  //   });
+  // }
 
-  private updateFileVersion(fileUri: string) {
-    const version = this._fileVersions.get(fileUri) || 0;
-    this._fileVersions.set(fileUri, version + 1);
-    return version;
-  }
-
-  protected async createMessageTransports(
-    encoding: string
-  ): Promise<MessageTransports> {
-    const server = this._serverOptions;
-    const serverWorkingDir = await this._getServerWorkingDir(server.options);
-
-    if (Executable.is(server) && server.command) {
-      const args: string[] =
-        server.args !== undefined ? server.args.slice(0) : [];
-      let pipeName: string | undefined = undefined;
-      const transport = server.transport;
-      if (transport === TransportKind.stdio) {
-        args.push("--stdio");
-      } else if (transport === TransportKind.pipe) {
-        pipeName = generateRandomPipeName();
-        args.push(`--pipe=${pipeName}`);
-      } else if (Transport.isSocket(transport)) {
-        args.push(`--socket=${transport.port}`);
-      } else if (transport === TransportKind.ipc) {
-        throw new Error(
-          "Transport kind ipc is not support for command executable"
-        );
-      }
-      const options = Object.assign({}, server.options);
-      options.cwd = options.cwd || serverWorkingDir;
-      if (transport === undefined || transport === TransportKind.stdio) {
-        message_emacs(`server ${server.command} ${args.join(' ')} ${JSON.stringify(options)}`)
-        const serverProcess = spawn(server.command, args, options);
-        if (!serverProcess || !serverProcess.pid) {
-          return handleChildProcessStartError(
-            serverProcess,
-            `Launching server using command ${server.command} failed.`
-          );
-        }
-        serverProcess.stderr.on("data", (data) =>
-          console.error(
-            "server error: ",
-            Is.string(data) ? data : data.toString(encoding)
-          )
-        );
-        this._serverProcess = serverProcess;
-        return Promise.resolve({
-          reader: new StreamMessageReader(serverProcess.stdout),
-          writer: new StreamMessageWriter(serverProcess.stdin),
-        });
-      }
-    }
-    return Promise.reject<MessageTransports>(
-      new Error(
-        "Unsupported server configuration " +
-          JSON.stringify(server, null, 4)
-      )
-    );
-  }
-
-  // TODO
-  private _getServerWorkingDir(options?: {
-    cwd?: string;
-  }): Promise<string | undefined> {
-    const cwd = options && options.cwd;
-    // make sure the folder exists otherwise creating the process will fail
-    return new Promise((resolve) => {
-      if (cwd) {
-        fs.lstat(cwd, (err, stats) => {
-          resolve(!err && stats.isDirectory() ? cwd : undefined);
-        });
-      } else {
-        resolve(undefined)
-      }
-    });
-  }
-
-  private data2String(data: object): string {
-    if (data instanceof ResponseError) {
-      const responseError = data as ResponseError<any>;
-      return `  Message: ${responseError.message}\n  Code: ${
-        responseError.code
-      } ${responseError.data ? "\n" + responseError.data.toString() : ""}`;
-    }
-    if (data instanceof Error) {
-      if (Is.string(data.stack)) {
-        return data.stack;
-      }
-      return (data as Error).message ?? JSON.stringify(data);
-    }
-    if (Is.string(data)) {
-      return data;
-    }
-    return data.toString();
-  }
+  // private updateFileVersion(fileUri: string) {
+  //   const version = this._fileVersions.get(fileUri) || 0;
+  //   this._fileVersions.set(fileUri, version + 1);
+  //   return version;
+  // }
 
   public info(message: string, data?: any): void {
     const msg = `[Info  - ${new Date().toLocaleTimeString()}] ${
-      message || this.data2String(data)
+      message || data2String(data)
     }`;
     logger.info(msg)
   }
 
   public warn(message: string, data?: any): void {
     const msg = `[Warn  - ${new Date().toLocaleTimeString()}] ${
-      message || this.data2String(data)
+      message || data2String(data)
     }`;
     logger.info(msg)
   }
 
   public error(message: string, data?: any): void {
     const msg = `[Error  - ${new Date().toLocaleTimeString()}] ${
-      message || this.data2String(data)
+      message || data2String(data)
     }`;
     logger.info(msg)
   }

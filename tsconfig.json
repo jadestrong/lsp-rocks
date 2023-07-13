@@ -24,9 +24,5 @@
     "importHelpers": true,
     "outDir": "lib"
   },
-  "exclude": [
-    "app/public",
-    "app/views",
-    "node_modules*",
-  ]
+  "exclude": ["typings", "node_modules*"]
 }

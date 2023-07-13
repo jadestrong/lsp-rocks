@@ -1,7 +1,3 @@
-import 'ws'
+declare module 'lsp-rocks' {
 
-declare module 'ws' {
-  interface WebSocket {
-    id?: string;
-  }
 }
