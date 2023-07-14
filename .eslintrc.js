@@ -4,9 +4,10 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:import/recommended',
     'plugin:import/typescript',
+    'plugin:prettier/recommended',
   ],
   parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint'],
+  plugins: ['@typescript-eslint', 'node'],
   env: {
     node: true,
   },
@@ -19,5 +20,5 @@ module.exports = {
     'no-trailing-spaces': 'error',
     '@typescript-eslint/no-namespace': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
-  }
+  },
 };
