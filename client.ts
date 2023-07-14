@@ -4,12 +4,8 @@ import * as Is from "./util";
 
 import {
   CancellationToken,
-  ClientCapabilities,
-  DiagnosticTag,
-  DidChangeTextDocumentNotification,
   ErrorCodes,
   ExitNotification,
-  FailureHandlingKind,
   InitializeParams,
   InitializeRequest,
   InitializeResult,
@@ -26,7 +22,6 @@ import {
   ProtocolRequestType0,
   RequestType,
   RequestType0,
-  ResourceOperationKind,
   SemanticTokensDeltaRequest,
   SemanticTokensRangeRequest,
   SemanticTokensRequest,
@@ -42,6 +37,9 @@ import {
   RegistrationParams,
   RegistrationRequest,
   Registration,
+  SymbolKind,
+  MarkupKind,
+  InsertTextMode,
 } from "vscode-languageserver-protocol";
 
 import {
@@ -52,7 +50,6 @@ import {
 } from "vscode-jsonrpc/node";
 import {
   DynamicFeature,
-  ensure,
   RunnableDynamicFeature,
 } from "./features/features";
 import {
@@ -195,14 +192,6 @@ export class LanguageClient {
     this.registerBuiltinFeatures();
   }
 
-  private get $state(): ClientState {
-    return this._state;
-  }
-
-  private set $state(value: ClientState) {
-    this._state = value;
-  }
-
   public sendRequest<R, PR, E, RO>(
     type: ProtocolRequestType0<R, PR, E, RO>,
     token?: CancellationToken
@@ -232,9 +221,9 @@ export class LanguageClient {
     ...params: any[]
   ): Promise<R | undefined> {
     if (
-      this.$state === ClientState.StartFailed ||
-      this.$state === ClientState.Stopping ||
-      this.$state === ClientState.Stopped
+      this._state === ClientState.StartFailed ||
+      this._state === ClientState.Stopping ||
+      this._state === ClientState.Stopped
     ) {
       return Promise.reject(
         new ResponseError(
@@ -258,9 +247,9 @@ export class LanguageClient {
   public onRequest<R, E>(method: string, handler: GenericRequestHandler<R, E>): Promise<Disposable>
   public async onRequest<R, E>(type: string | MessageSignature, handler: GenericRequestHandler<R, E>): Promise<Disposable | undefined>  {
     if (
-      this.$state === ClientState.StartFailed ||
-        this.$state === ClientState.Stopping ||
-        this.$state === ClientState.Stopped
+      this._state === ClientState.StartFailed ||
+        this._state === ClientState.Stopping ||
+        this._state === ClientState.Stopped
     ) {
       throw new Error('Language client is not ready yet')
     }
@@ -296,9 +285,9 @@ export class LanguageClient {
     params?: P
   ): Promise<void> {
     if (
-      this.$state === ClientState.StartFailed ||
-      this.$state === ClientState.Stopping ||
-      this.$state === ClientState.Stopped
+      this._state === ClientState.StartFailed ||
+      this._state === ClientState.Stopping ||
+      this._state === ClientState.Stopped
     ) {
       return Promise.reject(
         new ResponseError(
@@ -325,7 +314,7 @@ export class LanguageClient {
   }
 
   public async start(): Promise<void> {
-    if (this.$state === ClientState.Stopping) {
+    if (this._state === ClientState.Stopping) {
       throw new Error(
         "Client is currently stopping. Can only restart a full stopped client"
       );
@@ -338,7 +327,7 @@ export class LanguageClient {
     const [promise, resolve, reject] = this.createOnStartPromise();
     this._onStart = promise;
 
-    this.$state = ClientState.Starting;
+    this._state = ClientState.Starting;
     try {
       const connection = await new Connection().createConnection(
         this._serverOptions,
@@ -372,7 +361,7 @@ export class LanguageClient {
       await this.initialize(connection, this._clientInfo);
       resolve();
     } catch (error) {
-      this.$state = ClientState.StartFailed;
+      this._state = ClientState.StartFailed;
       this.error(
         `${this._name} client: couldn't create connection to server. ${(error as Error).message}`,
       );
@@ -400,7 +389,75 @@ export class LanguageClient {
       locale: "en",
       rootPath: this._project,
       rootUri: pathToFileURL(this._project).toString(),
-      capabilities: this.getClientCapabilities(),
+      capabilities: {
+        general: {
+          positionEncodings: ['utf-32', 'utf-16'],
+        },
+        workspace: {
+          workspaceEdit: {
+            documentChanges: true,
+            resourceOperations: ['create', 'rename', 'delete'],
+          },
+          applyEdit: true,
+          symbol: {
+            symbolKind: { valueSet: Array.from({ length: 25 }).map((_, idx) => idx + 1) as SymbolKind[] }
+          },
+          executeCommand: { dynamicRegistration: false },
+          // didChangeWatchedFiles: { dynamicRegistration: true },
+          // workspaceFolders: true,
+        },
+        textDocument: {
+          declaration: { dynamicRegistration: true, linkSupport: true },
+          definition: { dynamicRegistration: true, linkSupport: true },
+          references: { dynamicRegistration: true },
+          implementation: { dynamicRegistration: true, linkSupport: true },
+          typeDefinition: { dynamicRegistration: true, linkSupport: true },
+          synchronization: { willSave: true, didSave: true, willSaveWaitUntil: true },
+          // documentSymbol: { symbolKind }
+          // formatting: { dynamicRegistration: true },
+          // rangeFormatting: { dynamicRegistration: true },
+          // onTypeFormatting: { dynamicRegistration: true },
+          // rename: { dynamicRegistration: true, prepareSupport: true },
+          // codeAction: {
+          //   dynamicRegistration: true,
+          //   isPreferredSupport: true,
+          //   codeActionLiteralSupport: {
+          //     codeActionKind: {
+          //       valueSet: [
+          //         '',
+          //         "quickfix",
+          //         "refactor",
+          //         "refactor.extract",
+          //         "refactor.inline",
+          //         "refactor.rewrite",
+          //         "source",
+          //         "source.organizeImports"
+          //       ],
+          //     },
+          //   },
+          //   resolveSupport: { properties: ['edit', 'command'] },
+          //   dataSupport: true,
+          // },
+          completion: {
+            dynamicRegistration: true,
+            contextSupport: true,
+            completionItem: {
+              snippetSupport: true,
+              commitCharactersSupport: true,
+              documentationFormat: [MarkupKind.Markdown, MarkupKind.PlainText],
+              deprecatedSupport: true,
+              insertReplaceSupport: true,
+              insertTextModeSupport: { valueSet: [InsertTextMode.asIs, InsertTextMode.adjustIndentation] },
+              labelDetailsSupport: true
+            }
+          },
+          publishDiagnostics: {
+            relatedInformation: true,
+            tagSupport: { valueSet: [1, 2] },
+            versionSupport: true,
+          }
+        },
+      },
       initializationOptions,
       workspaceFolders: [
         {
@@ -450,52 +507,6 @@ export class LanguageClient {
     }
   }
 
-  private getClientCapabilities(): ClientCapabilities {
-    const result: ClientCapabilities = {};
-
-    // workspace
-    const workspace = ensure(result, "workspace");
-    workspace.applyEdit = true;
-    const workspaceEdit = ensure(workspace, "workspaceEdit");
-    workspaceEdit.documentChanges = true;
-    workspaceEdit.resourceOperations = [
-      ResourceOperationKind.Create,
-      ResourceOperationKind.Rename,
-      ResourceOperationKind.Delete,
-    ];
-    workspaceEdit.failureHandling = FailureHandlingKind.TextOnlyTransactional;
-    workspaceEdit.normalizesLineEndings = true;
-    workspaceEdit.changeAnnotationSupport = {
-      groupsOnLabel: true,
-    };
-
-    const diagnostics = ensure(ensure(result, "textDocument"), "publishDiagnostics");
-    diagnostics.relatedInformation = true;
-    diagnostics.versionSupport = false;
-    diagnostics.tagSupport = {
-      valueSet: [DiagnosticTag.Unnecessary, DiagnosticTag.Deprecated],
-    };
-    diagnostics.codeDescriptionSupport = true;
-    diagnostics.dataSupport = true;
-
-    const windowCapabilities = ensure(result, "window");
-    const showMessage = ensure(windowCapabilities, "showMessage");
-    showMessage.messageActionItem = { additionalPropertiesSupport: true };
-    const showDocument = ensure(windowCapabilities, "showDocument");
-    showDocument.support = true;
-
-    // general
-    const general = ensure(result, "general");
-    general.positionEncodings = ["utf-16", 'utf-32'];
-
-    // others
-    for (const feature of this._features) {
-      feature.fillClientCapabilities(result);
-    }
-
-    return result;
-  }
-
   private initializeFeatures() {
     const documentSelector = this._clientOptions.documentSelector
     for (const feature of this._features) {
@@ -531,7 +542,7 @@ export class LanguageClient {
       }
 
       this._initializeResult = result;
-      this.$state = ClientState.Running;
+      this._state = ClientState.Running;
 
       // TODO what?
       let textDocumentSyncOptions: TextDocumentSyncOptions | undefined =
@@ -562,7 +573,7 @@ export class LanguageClient {
           .textDocumentSync as TextDocumentSyncOptions;
       }
 
-      // 记录当前 client 支持的 server  capabilities
+      // 记录当前 client 支持的 server capabilities
       this._capabilities = Object.assign({}, result.capabilities, {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
@@ -583,12 +594,6 @@ export class LanguageClient {
     }
   }
 
-  private activeConnection(): ProtocolConnection | undefined {
-    return this.$state === ClientState.Running && this._connection !== undefined
-      ? this._connection
-      : undefined;
-  }
-
   public async stop(timeout = 2000) {
     try {
       await this.shutdown('stop', timeout);
@@ -605,14 +610,14 @@ export class LanguageClient {
   ): Promise<void> {
     // If the client is stopped or in its initial state return.
     if (
-      this.$state === ClientState.Stopped ||
-      this.$state === ClientState.Initial
+      this._state === ClientState.Stopped ||
+      this._state === ClientState.Initial
     ) {
       return;
     }
 
     // If we are stopping the client and have a stop promise return it.
-    if (this.$state === ClientState.Stopping) {
+    if (this._state === ClientState.Stopping) {
       if (this._onStop !== undefined) {
         return this._onStop;
       } else {
@@ -620,18 +625,18 @@ export class LanguageClient {
       }
     }
 
-    const connection = this.activeConnection();
+    const connection = this._connection;
 
     // We can't stop a client that is not running (e.g. has no connection). Especially not
     // on that us starting since it can't be correctly synchronized.
-    if (connection === undefined || this.$state !== ClientState.Running) {
+    if ( this._state !== ClientState.Running || !connection) {
       throw new Error(
-        `Client is not running and can't be stopped. It's current state is: ${this.$state}`
+        `Client is not running and can't be stopped. It's current state is: ${this._state}`
       );
     }
 
     this._initializeResult = undefined;
-    this.$state = ClientState.Stopping;
+    this._state = ClientState.Stopping;
 
     const tp = new Promise<undefined>((c) => {
       RAL().timer.setTimeout(c, timeout);
@@ -662,7 +667,7 @@ export class LanguageClient {
         }
       )
       .finally(() => {
-        this.$state = ClientState.Stopped;
+        this._state = ClientState.Stopped;
         this._onStart = undefined;
         this._onStop = undefined;
         this._connection = undefined;
@@ -693,22 +698,6 @@ export class LanguageClient {
       >
     ).run(params);
   }
-
-  // public async didChange(params: any) {
-  //   this.sendNotification(DidChangeTextDocumentNotification.type, {
-  //     textDocument: {
-  //       uri: params.uri,
-  //       version: this.updateFileVersion(params.uri),
-  //     },
-  //     contentChanges: [params.contentChange],
-  //   });
-  // }
-
-  // private updateFileVersion(fileUri: string) {
-  //   const version = this._fileVersions.get(fileUri) || 0;
-  //   this._fileVersions.set(fileUri, version + 1);
-  //   return version;
-  // }
 
   public info(message: string, data?: any): void {
     const msg = `[Info  - ${new Date().toLocaleTimeString()}] ${
