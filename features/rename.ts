@@ -1,19 +1,25 @@
-import { ClientCapabilities, PrepareRenameParams, PrepareRenameRequest, PrepareRenameResult, PrepareSupportDefaultBehavior, RegistrationType, RenameParams, RenameRegistrationOptions, RenameRequest, TextDocumentEdit, WorkspaceEdit } from "vscode-languageserver-protocol";
-import { LanguageClient } from "../client";
-import { RunnableDynamicFeature, ensure } from "./features";
+import {
+  PrepareRenameParams,
+  PrepareRenameRequest,
+  PrepareRenameResult,
+  RegistrationType,
+  RenameParams,
+  RenameRegistrationOptions,
+  RenameRequest,
+  TextDocumentEdit,
+  WorkspaceEdit,
+} from 'vscode-languageserver-protocol';
+import { LanguageClient } from '../client';
+import { RunnableDynamicFeature } from './features';
 
-export class RenameFeature extends RunnableDynamicFeature<RenameParams, RenameParams, Promise<WorkspaceEdit | null>, RenameRegistrationOptions> {
-
+export class RenameFeature extends RunnableDynamicFeature<
+  RenameParams,
+  RenameParams,
+  Promise<WorkspaceEdit | null>,
+  RenameRegistrationOptions
+> {
   constructor(private client: LanguageClient) {
     super();
-  }
-
-  public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    const rename = ensure(ensure(capabilities, 'textDocument')!, 'rename')!;
-    rename.dynamicRegistration = true;
-    rename.prepareSupport = true;
-    rename.prepareSupportDefaultBehavior = PrepareSupportDefaultBehavior.Identifier;
-    rename.honorsChangeAnnotations = true;
   }
 
   public async runWith(params: RenameParams): Promise<WorkspaceEdit | null> {
@@ -26,13 +32,14 @@ export class RenameFeature extends RunnableDynamicFeature<RenameParams, RenamePa
       if (resp.documentChanges == undefined) {
         resp.documentChanges = [];
       }
-      resp.documentChanges = resp.documentChanges.concat(Object.keys(resp.changes)
-        .map(uri => {
+      resp.documentChanges = resp.documentChanges.concat(
+        Object.keys(resp.changes).map(uri => {
           return {
-            textDocument: { uri, },
+            textDocument: { uri },
             edits: resp.changes?.[uri],
           } as TextDocumentEdit;
-        }));
+        }),
+      );
     }
 
     return resp;
@@ -41,23 +48,25 @@ export class RenameFeature extends RunnableDynamicFeature<RenameParams, RenamePa
   public get registrationType(): RegistrationType<RenameRegistrationOptions> {
     return RenameRequest.type;
   }
-
 }
 
-export class PrepareRenameFeature extends RunnableDynamicFeature<PrepareRenameParams, PrepareRenameParams, Promise<PrepareRenameResult | null>, void> {
-
+export class PrepareRenameFeature extends RunnableDynamicFeature<
+  PrepareRenameParams,
+  PrepareRenameParams,
+  Promise<PrepareRenameResult | null>,
+  void
+> {
   constructor(private client: LanguageClient) {
     super();
   }
 
-  public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    const rename = ensure(ensure(capabilities, 'textDocument')!, 'rename')!;
-    rename.prepareSupport = true;
-    rename.prepareSupportDefaultBehavior = PrepareSupportDefaultBehavior.Identifier;
-  }
-
-  public async runWith(params: PrepareRenameParams): Promise<PrepareRenameResult | null> {
-    const resp = await this.client.sendRequest(PrepareRenameRequest.type, params);
+  public async runWith(
+    params: PrepareRenameParams,
+  ): Promise<PrepareRenameResult | null> {
+    const resp = await this.client.sendRequest(
+      PrepareRenameRequest.type,
+      params,
+    );
     if (resp == null) return null;
 
     console.log('prepare resp ==> ', resp);
@@ -79,5 +88,4 @@ export class PrepareRenameFeature extends RunnableDynamicFeature<PrepareRenamePa
   public get registrationType(): RegistrationType<void> {
     return PrepareRenameRequest.type;
   }
-
 }

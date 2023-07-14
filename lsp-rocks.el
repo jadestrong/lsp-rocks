@@ -95,8 +95,6 @@
   "Get VARS and return values."
   (mapcar #'lsp-rocks--get-emacs-var-func vars))
 
-(defvar lsp-rocks-internal-process nil)
-
 (defcustom lsp-rocks-name "*lsp-rocks*"
   "Name of LSP-ROCKS buffer."
   :type 'string
@@ -342,7 +340,6 @@ Setting this to nil or 0 will turn off the indicator."
    default-directory))
 
 (defvar lsp-rocks--already-widened nil)
-
 (defmacro lsp-rocks--save-restriction-and-excursion (&rest form)
   (declare (indent 0) (debug t))
   `(if lsp-rocks--already-widened
@@ -377,12 +374,6 @@ Setting this to nil or 0 will turn off the indicator."
           :command command
           :args args
           :clientInfo (list :name "Emacs" :version (emacs-version)))))
-
-(defun lsp-rocks--inited()
-  "When create LanguageClient successed, called by lsp-rocks server."
-  (setq lsp-rocks-is-started t)
-  (run-hooks 'lsp-rocks-started-hook)
-  (lsp-rocks--did-open))
 
 (defun lsp-rocks--message-handler (msg)
   (let* (
@@ -503,6 +494,37 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (when (cl-plusp (length additionalTextEdits))
       (lsp-rocks--apply-text-edits additionalTextEdits))))
 
+(setq-local lsp-rocks--completion-trigger-characters nil)
+(defun lsp-rocks--get-match-buffer-by-filepath (name)
+  (cl-dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when-let* ((file-name (buffer-file-name buffer))
+                  (match-buffer (or (string-equal file-name name)
+                                    (string-equal (file-truename file-name) name))))
+        (cl-return buffer)))))
+
+(defun lsp-rocks--record-trigger-characters (filename trigger-characters)
+  (message "filename %s trigger-characters: %s" filename trigger-characters)
+  (when-let ((buffer (lsp-rocks--get-match-buffer-by-filepath filename)))
+    (with-current-buffer buffer
+      (setq-local lsp-rocks--completion-trigger-characters trigger-characters))))
+
+(defun lsp-rocks--looking-back-trigger-characterp (trigger-characters)
+  "Return character if text before point match any of the TRIGGER-CHARACTERS."
+  (unless (= (point) (line-beginning-position))
+    (cl-some
+     (lambda (trigger-char)
+       (and (equal (buffer-substring-no-properties (- (point) (length trigger-char)) (point))
+                   trigger-char)
+            trigger-char))
+     trigger-characters)))
+
+(defun lsp-rocks--get-prefix ()
+  (when (and lsp-rocks-mode lsp-rocks-is-started)
+    (if (lsp-rocks--looking-back-trigger-characterp lsp-rocks--completion-trigger-characters)
+        (cons (company-grab-symbol) t)
+      (company-grab-symbol))))
+
 (defun company-lsp-rocks (command &optional arg &rest ignored)
   "`company-mode' completion backend existing file names.
 Completions works for proper absolute and relative files paths.
@@ -510,7 +532,7 @@ File paths with spaces are only supported inside strings."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-lsp-rocks))
-    (prefix (and lsp-rocks-mode lsp-rocks-is-started (cons (company-grab-symbol) t)))
+    (prefix (lsp-rocks--get-prefix))
     (candidates (cons :async (lambda (callback)
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
@@ -531,8 +553,7 @@ File paths with spaces are only supported inside strings."
                                 (list :uri buffer-file-name
                                       :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
                                       :version 0
-                                      :text (buffer-substring-no-properties (point-min) (point-max)))))
-    ))
+                                      :text (buffer-substring-no-properties (point-min) (point-max)))))))
 
 (defun lsp-rocks--did-close ()
   "Send textDocument/didClose notification."

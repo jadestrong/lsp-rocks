@@ -1,19 +1,25 @@
-import { ClientCapabilities, RegistrationType, HoverParams, HoverRegistrationOptions, HoverRequest, MarkupKind, Hover, MarkupContent, MarkedString } from "vscode-languageserver-protocol";
-import { LanguageClient } from "../client";
-import { RunnableDynamicFeature, ensure } from "./features";
+import {
+  RegistrationType,
+  HoverParams,
+  HoverRegistrationOptions,
+  HoverRequest,
+  MarkupKind,
+  MarkupContent,
+  MarkedString,
+} from 'vscode-languageserver-protocol';
+import { LanguageClient } from '../client';
+import { RunnableDynamicFeature } from './features';
 
-export class HoverFeature extends RunnableDynamicFeature<HoverParams, HoverParams, Promise<string | null>, HoverRegistrationOptions> {
-
+export class HoverFeature extends RunnableDynamicFeature<
+  HoverParams,
+  HoverParams,
+  Promise<string | null>,
+  HoverRegistrationOptions
+> {
   private readonly markup = '```';
 
   constructor(private client: LanguageClient) {
     super();
-  }
-
-  public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    const hoverSupport = (ensure(ensure(capabilities, 'textDocument')!, 'hover')!);
-    hoverSupport.dynamicRegistration = true;
-    hoverSupport.contentFormat = [MarkupKind.Markdown, MarkupKind.PlainText];
   }
 
   public async runWith(params: HoverParams): Promise<string | null> {
@@ -23,13 +29,14 @@ export class HoverFeature extends RunnableDynamicFeature<HoverParams, HoverParam
     return this.parseHoverContens(resp.contents, []);
   }
 
-  private parseHoverContens(contents: MarkupContent | MarkedString | MarkedString[], result: string[]) {
+  private parseHoverContens(
+    contents: MarkupContent | MarkedString | MarkedString[],
+    result: string[],
+  ) {
     if (MarkedString.is(contents)) {
       if (typeof contents == 'string') {
-        if (contents.startsWith('```'))
-          result.push(contents);
-        else
-          result.push(contents);
+        if (contents.startsWith('```')) result.push(contents);
+        else result.push(contents);
       } else {
         result.push(this.codeBlockFor(contents.language, contents.value));
       }
@@ -37,7 +44,7 @@ export class HoverFeature extends RunnableDynamicFeature<HoverParams, HoverParam
       result.push(
         contents.kind == MarkupKind.Markdown
           ? contents.value.trimStart()
-          : this.codeBlockFor('text', contents.value)
+          : this.codeBlockFor('text', contents.value),
       );
     } else {
       result.push(this.parseMarkedStringArray(contents));
@@ -74,5 +81,4 @@ export class HoverFeature extends RunnableDynamicFeature<HoverParams, HoverParam
   public get registrationType(): RegistrationType<HoverRegistrationOptions> {
     return HoverRequest.type;
   }
-
 }

@@ -1,7 +1,4 @@
-import {
-  ClientCapabilities,
-  ConfigurationRequest,
-} from "vscode-languageserver-protocol";
+import { ConfigurationRequest } from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
 import { RunnableDynamicFeature } from "./features";
 
@@ -27,10 +24,5 @@ export class ConfigurationFeature extends RunnableDynamicFeature<
 
   protected runWith() {
     //
-  }
-
-  public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    capabilities.workspace = capabilities.workspace ?? {}
-    capabilities.workspace.configuration = true
   }
 }

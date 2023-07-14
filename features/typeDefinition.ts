@@ -1,18 +1,24 @@
-import { ClientCapabilities, RegistrationType, DefinitionParams, DefinitionRegistrationOptions, DefinitionRequest, Location, LocationLink, TypeDefinitionParams, TypeDefinitionRegistrationOptions, TypeDefinitionRequest } from "vscode-languageserver-protocol";
-import { LanguageClient } from "../client";
-import { RunnableDynamicFeature, ensure } from "./features";
-import { fileURLToPath } from 'node:url'
+import {
+  RegistrationType,
+  DefinitionRequest,
+  Location,
+  LocationLink,
+  TypeDefinitionParams,
+  TypeDefinitionRegistrationOptions,
+  TypeDefinitionRequest,
+} from 'vscode-languageserver-protocol';
+import { LanguageClient } from '../client';
+import { RunnableDynamicFeature } from './features';
+import { fileURLToPath } from 'node:url';
 
-export class TypeDefinitionFeature extends RunnableDynamicFeature<TypeDefinitionParams, TypeDefinitionParams, Promise<Location[]>, TypeDefinitionRegistrationOptions> {
-
+export class TypeDefinitionFeature extends RunnableDynamicFeature<
+  TypeDefinitionParams,
+  TypeDefinitionParams,
+  Promise<Location[]>,
+  TypeDefinitionRegistrationOptions
+> {
   constructor(private client: LanguageClient) {
     super();
-  }
-
-  public fillClientCapabilities(capabilities: ClientCapabilities): void {
-    const typeDefinitionSupport = ensure(ensure(capabilities, 'textDocument')!, 'typeDefinition')!;
-    typeDefinitionSupport.dynamicRegistration = true;
-    typeDefinitionSupport.linkSupport = true;
   }
 
   public async runWith(params: TypeDefinitionParams): Promise<Location[]> {
@@ -39,5 +45,4 @@ export class TypeDefinitionFeature extends RunnableDynamicFeature<TypeDefinition
   public get registrationType(): RegistrationType<TypeDefinitionRegistrationOptions> {
     return TypeDefinitionRequest.type;
   }
-
 }

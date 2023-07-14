@@ -1,6 +1,6 @@
-import * as fs from "fs";
-import { ChildProcess } from "child_process";
-import * as Is from "./util";
+import * as fs from 'fs';
+import { ChildProcess } from 'child_process';
+import * as Is from './util';
 
 import {
   CancellationToken,
@@ -40,54 +40,51 @@ import {
   SymbolKind,
   MarkupKind,
   InsertTextMode,
-} from "vscode-languageserver-protocol";
+} from 'vscode-languageserver-protocol';
 
 import {
   CancellationStrategy,
   MessageSignature,
   RAL,
   ResponseError,
-} from "vscode-jsonrpc/node";
-import {
-  DynamicFeature,
-  RunnableDynamicFeature,
-} from "./features/features";
+} from 'vscode-jsonrpc/node';
+import { DynamicFeature, RunnableDynamicFeature } from './features/features';
 import {
   DidChangeTextDocumentFeature,
   DidCloseTextDocumentFeature,
   DidOpenTextDocumentFeature,
   DidSaveTextDocumentFeature,
   WillSaveTextDocumentFeature,
-} from "./features/textSynchronization";
+} from './features/textSynchronization';
 import {
   CompletionFeature,
   CompletionItemResolveFeature,
-} from "./features/completion";
-import { DefinitionFeature } from "./features/definition";
-import { DeclarationFeature } from "./features/declaration";
-import { ReferencesFeature } from "./features/reference";
-import { ImplementationFeature } from "./features/implementation";
+} from './features/completion';
+import { DefinitionFeature } from './features/definition';
+import { DeclarationFeature } from './features/declaration';
+import { ReferencesFeature } from './features/reference';
+import { ImplementationFeature } from './features/implementation';
 
-import * as path from "node:path";
-import { pathToFileURL } from "node:url";
-import { TypeDefinitionFeature } from "./features/typeDefinition";
-import { HoverFeature } from "./features/hover";
-import { SignatureHelpFeature } from "./features/signatureHelp";
-import { PrepareRenameFeature, RenameFeature } from "./features/rename";
-import { logger, message_emacs } from "./epc-utils";
-import { ConfigurationFeature } from "./features/configuration";
-import { Logger } from "pino";
-import { createLogger } from "./logger";
-import Connection, { ServerOptions } from "./connection";
-import data2String from "./utils/data2String";
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { TypeDefinitionFeature } from './features/typeDefinition';
+import { HoverFeature } from './features/hover';
+import { SignatureHelpFeature } from './features/signatureHelp';
+import { PrepareRenameFeature, RenameFeature } from './features/rename';
+import { logger, message_emacs } from './epc-utils';
+import { ConfigurationFeature } from './features/configuration';
+import { Logger } from 'pino';
+import { createLogger } from './logger';
+import Connection, { ServerOptions } from './connection';
+import data2String from './utils/data2String';
 
 enum ClientState {
-  Initial = "initial",
-  Starting = "starting",
-  StartFailed = "startFailed",
-  Running = "running",
-  Stopping = "stopping",
-  Stopped = "stopped",
+  Initial = 'initial',
+  Starting = 'starting',
+  StartFailed = 'startFailed',
+  Running = 'running',
+  Stopping = 'stopping',
+  Stopped = 'stopped',
 }
 
 /**
@@ -112,7 +109,7 @@ type ResolvedClientOptions = {
   stdioEncoding: string;
   initializationOptions?: any | (() => any);
   progressOnInitialization: boolean;
-  documentSelector?: DocumentSelector
+  documentSelector?: DocumentSelector;
   connectionOptions?: {
     cancellationStrategy?: CancellationStrategy;
     maxRestartCount?: number;
@@ -121,7 +118,7 @@ type ResolvedClientOptions = {
     isTrusted: boolean;
     supportHtml: boolean;
   };
-  disableDynamicRegister?: boolean
+  disableDynamicRegister?: boolean;
 };
 
 export class LanguageClient {
@@ -151,9 +148,12 @@ export class LanguageClient {
 
   private _initializeResult: InitializeResult | undefined;
 
-  private _capabilities: ServerCapabilities;
+  private capabilities: ServerCapabilities;
   // 记录 client/registerCapability 返回注册的能力
-  registeredServerCapabilities = new Map<Registration['method'], Registration>();
+  registeredServerCapabilities = new Map<
+    Registration['method'],
+    Registration
+  >();
 
   private _clientOptions: ResolvedClientOptions;
 
@@ -167,7 +167,7 @@ export class LanguageClient {
     language: string,
     project: string,
     clientInfo: any,
-    serverOptions: ServerOptions
+    serverOptions: ServerOptions,
   ) {
     this._name = `${project}:${language}`;
     this._project = project;
@@ -178,7 +178,7 @@ export class LanguageClient {
     this._features = [];
     this._dynamicFeatures = new Map();
     this._clientOptions = {
-      stdioEncoding: "utf-8",
+      stdioEncoding: 'utf-8',
       progressOnInitialization: false,
       markdown: {
         isTrusted: true,
@@ -186,35 +186,45 @@ export class LanguageClient {
       },
     };
 
-    this.logger = createLogger(language)
+    this.logger = createLogger(language);
 
-    // TODO 哪些是 builtin 的？
     this.registerBuiltinFeatures();
+  }
+
+  get triggerCharacters() {
+    const triggerCharacters =
+      this.capabilities.completionProvider?.triggerCharacters ?? [];
+    if (this._language === 'tailwindcss') {
+      // NOTE Workaround the problem that company-mode completion not work when typing \"-\" in classname.
+      // As company-grap-symbol return nil when before char isn't a symbol.
+      return [...triggerCharacters, '-'];
+    }
+    return triggerCharacters ?? [];
   }
 
   public sendRequest<R, PR, E, RO>(
     type: ProtocolRequestType0<R, PR, E, RO>,
-    token?: CancellationToken
+    token?: CancellationToken,
   ): Promise<R>;
   public sendRequest<P, R, PR, E, RO>(
     type: ProtocolRequestType<P, R, PR, E, RO>,
     params: P,
-    token?: CancellationToken
+    token?: CancellationToken,
   ): Promise<R>;
   public sendRequest<R, E>(
     type: RequestType0<R, E>,
-    token?: CancellationToken
+    token?: CancellationToken,
   ): Promise<R>;
   public sendRequest<P, R, E>(
     type: RequestType<P, R, E>,
     params: P,
-    token?: CancellationToken
+    token?: CancellationToken,
   ): Promise<R>;
   public sendRequest<R>(method: string, token?: CancellationToken): Promise<R>;
   public sendRequest<R>(
     method: string,
     param: any,
-    token?: CancellationToken
+    token?: CancellationToken,
   ): Promise<R>;
   public async sendRequest<R>(
     type: string | MessageSignature,
@@ -228,61 +238,85 @@ export class LanguageClient {
       return Promise.reject(
         new ResponseError(
           ErrorCodes.ConnectionInactive,
-          "Client is not running"
-        )
+          'Client is not running',
+        ),
       );
     }
     try {
-      return await this._connection?.sendRequest<R>(Is.toMethod(type), ...params);
+      return await this._connection?.sendRequest<R>(
+        Is.toMethod(type),
+        ...params,
+      );
     } catch (error) {
-      this.error(`Sending request ${Is.toMethod(type)} failed. ` + (error as Error).message);
+      this.error(
+        `Sending request ${Is.toMethod(type)} failed. ` +
+          (error as Error).message,
+      );
       throw error;
     }
   }
 
-  public onRequest<R, PR, E, RO>(type: ProtocolRequestType0<R, PR, E, RO>, handler: RequestHandler0<R, E>): Promise<Disposable>
-  public onRequest<P, R, PR, E, RO>(type: ProtocolRequestType<P, R, PR, E, RO>, handler: RequestHandler<P, R, E>): Promise<Disposable>
-  public onRequest<R, E>(type: RequestType0<R, E>, handler: RequestHandler0<R, E>): Promise<Disposable>
-  public onRequest<P, R, E>(type: RequestType<P, R, E>, handler: RequestHandler<P, R, E>): Promise<Disposable>
-  public onRequest<R, E>(method: string, handler: GenericRequestHandler<R, E>): Promise<Disposable>
-  public async onRequest<R, E>(type: string | MessageSignature, handler: GenericRequestHandler<R, E>): Promise<Disposable | undefined>  {
+  public onRequest<R, PR, E, RO>(
+    type: ProtocolRequestType0<R, PR, E, RO>,
+    handler: RequestHandler0<R, E>,
+  ): Promise<Disposable>;
+  public onRequest<P, R, PR, E, RO>(
+    type: ProtocolRequestType<P, R, PR, E, RO>,
+    handler: RequestHandler<P, R, E>,
+  ): Promise<Disposable>;
+  public onRequest<R, E>(
+    type: RequestType0<R, E>,
+    handler: RequestHandler0<R, E>,
+  ): Promise<Disposable>;
+  public onRequest<P, R, E>(
+    type: RequestType<P, R, E>,
+    handler: RequestHandler<P, R, E>,
+  ): Promise<Disposable>;
+  public onRequest<R, E>(
+    method: string,
+    handler: GenericRequestHandler<R, E>,
+  ): Promise<Disposable>;
+  public async onRequest<R, E>(
+    type: string | MessageSignature,
+    handler: GenericRequestHandler<R, E>,
+  ): Promise<Disposable | undefined> {
     if (
       this._state === ClientState.StartFailed ||
-        this._state === ClientState.Stopping ||
-        this._state === ClientState.Stopped
+      this._state === ClientState.Stopping ||
+      this._state === ClientState.Stopped
     ) {
-      throw new Error('Language client is not ready yet')
+      throw new Error('Language client is not ready yet');
     }
     try {
       return this._connection?.onRequest(Is.toMethod(type), (...params) => {
-        return handler.call(null, ...params)
-      })
+        return handler.call(null, ...params);
+      });
     } catch (error) {
       this.error(
         `Registering request handler ${Is.toMethod(type)} failed.`,
-        (error as Error).message
-      )
-      throw error
+        (error as Error).message,
+      );
+      throw error;
     }
   }
 
   public sendNotification<RO>(
-    type: ProtocolNotificationType0<RO>
+    type: ProtocolNotificationType0<RO>,
   ): Promise<void>;
   public sendNotification<P, RO>(
     type: ProtocolNotificationType<P, RO>,
-    params?: P
+    params?: P,
   ): Promise<void>;
   public sendNotification(type: NotificationType0): Promise<void>;
   public sendNotification<P>(
     type: NotificationType<P>,
-    params?: P
+    params?: P,
   ): Promise<void>;
   public sendNotification(method: string): Promise<void>;
   public sendNotification(method: string, params: any): Promise<void>;
   public async sendNotification<P>(
     type: string | MessageSignature,
-    params?: P
+    params?: P,
   ): Promise<void> {
     if (
       this._state === ClientState.StartFailed ||
@@ -292,17 +326,20 @@ export class LanguageClient {
       return Promise.reject(
         new ResponseError(
           ErrorCodes.ConnectionInactive,
-          "Client is not running"
-        )
+          'Client is not running',
+        ),
       );
     }
     try {
       // logger.info(`[sendNotification] ${Is.toMethod(type)}`, params)
-      return await this._connection?.sendNotification(Is.toMethod(type), params);
+      return await this._connection?.sendNotification(
+        Is.toMethod(type),
+        params,
+      );
     } catch (error) {
       this.error(
         `Sending notification ${Is.string(type) ? type : type.method} failed.`,
-        error
+        error,
       );
       throw error;
     }
@@ -316,7 +353,7 @@ export class LanguageClient {
   public async start(): Promise<void> {
     if (this._state === ClientState.Stopping) {
       throw new Error(
-        "Client is currently stopping. Can only restart a full stopped client"
+        'Client is currently stopping. Can only restart a full stopped client',
       );
     }
     // We are already running or are in the process of getting up
@@ -334,7 +371,7 @@ export class LanguageClient {
         this._clientInfo.connectionOptions,
         this.logger,
       );
-      connection.onNotification(LogMessageNotification.type, (message) => {
+      connection.onNotification(LogMessageNotification.type, message => {
         switch (message.type) {
           case MessageType.Error:
             this.error(message.message);
@@ -350,20 +387,24 @@ export class LanguageClient {
         }
       });
       connection.listen();
-      this._connection = connection
-      this.initializeFeatures()
+      this._connection = connection;
+      this.initializeFeatures();
 
       connection.onRequest(RegistrationRequest.type, params =>
-        this.handleRegistrationRequest(params)
-      )
-      connection.onRequest('client/registerFeature', params => this.handleRegistrationRequest(params))
+        this.handleRegistrationRequest(params),
+      );
+      connection.onRequest('client/registerFeature', params =>
+        this.handleRegistrationRequest(params),
+      );
 
       await this.initialize(connection, this._clientInfo);
       resolve();
     } catch (error) {
       this._state = ClientState.StartFailed;
       this.error(
-        `${this._name} client: couldn't create connection to server. ${(error as Error).message}`,
+        `${this._name} client: couldn't create connection to server. ${
+          (error as Error).message
+        }`,
       );
       reject(error);
     }
@@ -372,21 +413,21 @@ export class LanguageClient {
 
   private async initialize(
     connection: ProtocolConnection,
-    clientInfo: any
+    clientInfo: any,
   ): Promise<InitializeResult> {
     // May language server need some initialization options.
     const langSreverConfig = `./langserver/${this._language}.json`;
     const initializationOptions = fs.existsSync(
-      path.join(__dirname, langSreverConfig)
+      path.join(__dirname, langSreverConfig),
     )
       ? require(langSreverConfig)
       : {};
-    this._initializationOptions = initializationOptions
+    this._initializationOptions = initializationOptions;
 
     const initParams: InitializeParams = {
       processId: process.pid,
       clientInfo,
-      locale: "en",
+      locale: 'en',
       rootPath: this._project,
       rootUri: pathToFileURL(this._project).toString(),
       capabilities: {
@@ -400,7 +441,11 @@ export class LanguageClient {
           },
           applyEdit: true,
           symbol: {
-            symbolKind: { valueSet: Array.from({ length: 25 }).map((_, idx) => idx + 1) as SymbolKind[] }
+            symbolKind: {
+              valueSet: Array.from({ length: 25 }).map(
+                (_, idx) => idx + 1,
+              ) as SymbolKind[],
+            },
           },
           executeCommand: { dynamicRegistration: false },
           // didChangeWatchedFiles: { dynamicRegistration: true },
@@ -412,7 +457,11 @@ export class LanguageClient {
           references: { dynamicRegistration: true },
           implementation: { dynamicRegistration: true, linkSupport: true },
           typeDefinition: { dynamicRegistration: true, linkSupport: true },
-          synchronization: { willSave: true, didSave: true, willSaveWaitUntil: true },
+          synchronization: {
+            willSave: true,
+            didSave: true,
+            willSaveWaitUntil: true,
+          },
           // documentSymbol: { symbolKind }
           // formatting: { dynamicRegistration: true },
           // rangeFormatting: { dynamicRegistration: true },
@@ -447,26 +496,31 @@ export class LanguageClient {
               documentationFormat: [MarkupKind.Markdown, MarkupKind.PlainText],
               deprecatedSupport: true,
               insertReplaceSupport: true,
-              insertTextModeSupport: { valueSet: [InsertTextMode.asIs, InsertTextMode.adjustIndentation] },
-              labelDetailsSupport: true
-            }
+              insertTextModeSupport: {
+                valueSet: [
+                  InsertTextMode.asIs,
+                  InsertTextMode.adjustIndentation,
+                ],
+              },
+              labelDetailsSupport: true,
+            },
           },
           publishDiagnostics: {
             relatedInformation: true,
             tagSupport: { valueSet: [1, 2] },
             versionSupport: true,
-          }
+          },
         },
       },
       initializationOptions,
       workspaceFolders: [
         {
           uri: pathToFileURL(this._project).toString(),
-          name: this._project.slice(this._project.lastIndexOf("/")),
+          name: this._project.slice(this._project.lastIndexOf('/')),
         },
       ],
     };
-    this.fillInitializeParams(initParams);
+
     return this.doInitialize(connection, initParams);
   }
 
@@ -499,18 +553,10 @@ export class LanguageClient {
     this.registerFeature(new ConfigurationFeature(this));
   }
 
-  protected fillInitializeParams(params: InitializeParams): void {
-    for (const feature of this._features) {
-      if (Is.func(feature.fillInitializeParams)) {
-        feature.fillInitializeParams(params);
-      }
-    }
-  }
-
   private initializeFeatures() {
-    const documentSelector = this._clientOptions.documentSelector
+    const documentSelector = this._clientOptions.documentSelector;
     for (const feature of this._features) {
-      feature.initialize(this._capabilities, documentSelector)
+      feature.initialize(this.capabilities, documentSelector);
     }
   }
 
@@ -520,24 +566,29 @@ export class LanguageClient {
       if (!feature) {
         this.error(`No feature implementation for ${registration.method}`);
       }
-      logger.info(`register ${registration.method}`, JSON.stringify(registration))
+      logger.info(
+        `register ${registration.method}`,
+        JSON.stringify(registration),
+      );
       this.registeredServerCapabilities.set(registration.method, registration);
     }
   }
 
   private async doInitialize(
     connection: ProtocolConnection,
-    initParams: InitializeParams
+    initParams: InitializeParams,
   ): Promise<InitializeResult> {
-
     try {
-      const result = await connection.sendRequest(InitializeRequest.type, initParams);
+      const result = await connection.sendRequest(
+        InitializeRequest.type,
+        initParams,
+      );
       if (
         result.capabilities.positionEncoding !== undefined &&
         result.capabilities.positionEncoding !== PositionEncodingKind.UTF16
       ) {
         throw new Error(
-          `Unsupported position encoding (${result.capabilities.positionEncoding}) received from server ${this._name}`
+          `Unsupported position encoding (${result.capabilities.positionEncoding}) received from server ${this._name}`,
         );
       }
 
@@ -574,7 +625,7 @@ export class LanguageClient {
       }
 
       // 记录当前 client 支持的 server capabilities
-      this._capabilities = Object.assign({}, result.capabilities, {
+      this.capabilities = Object.assign({}, result.capabilities, {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
       this.initializeFeatures();
@@ -584,11 +635,13 @@ export class LanguageClient {
       return result;
     } catch (error) {
       if (error instanceof Error) {
-        message_emacs("error " + ' message ' + error.message + ' stack' + error.stack);
+        message_emacs(
+          'error ' + ' message ' + error.message + ' stack' + error.stack,
+        );
       } else {
-        message_emacs("error1: " + JSON.stringify(error))
+        message_emacs('error1: ' + JSON.stringify(error));
       }
-      this.error("Server initialization failed.", error);
+      this.error('Server initialization failed.', error);
       void this.stop();
       throw error;
     }
@@ -605,8 +658,8 @@ export class LanguageClient {
   }
 
   private async shutdown(
-    mode: "suspend" | "stop",
-    timeout: number
+    mode: 'suspend' | 'stop',
+    timeout: number,
   ): Promise<void> {
     // If the client is stopped or in its initial state return.
     if (
@@ -621,7 +674,7 @@ export class LanguageClient {
       if (this._onStop !== undefined) {
         return this._onStop;
       } else {
-        throw new Error("Client is stopping but no stop promise available.");
+        throw new Error('Client is stopping but no stop promise available.');
       }
     }
 
@@ -629,20 +682,20 @@ export class LanguageClient {
 
     // We can't stop a client that is not running (e.g. has no connection). Especially not
     // on that us starting since it can't be correctly synchronized.
-    if ( this._state !== ClientState.Running || !connection) {
+    if (this._state !== ClientState.Running || !connection) {
       throw new Error(
-        `Client is not running and can't be stopped. It's current state is: ${this._state}`
+        `Client is not running and can't be stopped. It's current state is: ${this._state}`,
       );
     }
 
     this._initializeResult = undefined;
     this._state = ClientState.Stopping;
 
-    const tp = new Promise<undefined>((c) => {
+    const tp = new Promise<undefined>(c => {
       RAL().timer.setTimeout(c, timeout);
     });
     // eslint-disable-next-line @typescript-eslint/no-shadow
-    const shutdown = (async (connection) => {
+    const shutdown = (async connection => {
       await connection.sendRequest(ShutdownRequest.type, undefined);
       await connection.sendNotification(ExitNotification.type);
       return connection;
@@ -651,20 +704,20 @@ export class LanguageClient {
     // eslint-disable-next-line @typescript-eslint/no-shadow
     return (this._onStop = Promise.race([tp, shutdown])
       .then(
-        (connection) => {
+        connection => {
           // The connection won the race with the timeout.
           if (connection !== undefined) {
             connection.end();
             connection.dispose();
           } else {
-            this.error("Stopping server timed out");
-            throw new Error("Stopping the server timed out");
+            this.error('Stopping server timed out');
+            throw new Error('Stopping the server timed out');
           }
         },
-        (error) => {
-          this.error("Stopping server failed", error);
+        error => {
+          this.error('Stopping server failed', error);
           throw error;
-        }
+        },
       )
       .finally(() => {
         this._state = ClientState.Stopped;
@@ -677,7 +730,7 @@ export class LanguageClient {
   private createOnStartPromise(): [
     Promise<void>,
     () => void,
-    (error: any) => void
+    (error: any) => void,
   ] {
     let resolve!: () => void;
     let reject!: (error: any) => void;
@@ -703,21 +756,21 @@ export class LanguageClient {
     const msg = `[Info  - ${new Date().toLocaleTimeString()}] ${
       message || data2String(data)
     }`;
-    logger.info(msg)
+    logger.info(msg);
   }
 
   public warn(message: string, data?: any): void {
     const msg = `[Warn  - ${new Date().toLocaleTimeString()}] ${
       message || data2String(data)
     }`;
-    logger.info(msg)
+    logger.info(msg);
   }
 
   public error(message: string, data?: any): void {
     const msg = `[Error  - ${new Date().toLocaleTimeString()}] ${
       message || data2String(data)
     }`;
-    logger.info(msg)
+    logger.info(msg);
   }
 
   private static RequestsToCancelOnContentModified: Set<string> = new Set([

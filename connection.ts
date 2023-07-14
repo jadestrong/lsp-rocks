@@ -1,10 +1,21 @@
-import { lstat } from "fs";
-import { ChildProcess, spawn } from "child_process";
-import { ConnectionOptions, MessageReader, MessageWriter, ProtocolConnection, Trace, createProtocolConnection } from "vscode-languageserver-protocol";
-import { StreamMessageReader, StreamMessageWriter, generateRandomPipeName } from 'vscode-jsonrpc/node'
-import { Logger } from "pino";
-import { message_emacs } from "./epc-utils";
-import * as Is from "./util";
+import { lstat } from 'fs';
+import { ChildProcess, spawn } from 'child_process';
+import {
+  ConnectionOptions,
+  MessageReader,
+  MessageWriter,
+  ProtocolConnection,
+  Trace,
+  createProtocolConnection,
+} from 'vscode-languageserver-protocol';
+import {
+  StreamMessageReader,
+  StreamMessageWriter,
+  generateRandomPipeName,
+} from 'vscode-jsonrpc/node';
+import { Logger } from 'pino';
+import { message_emacs } from './epc-utils';
+import * as Is from './util';
 
 export enum TransportKind {
   stdio,
@@ -18,7 +29,7 @@ export interface SocketTransport {
 }
 namespace Transport {
   export function isSocket(
-    value: Transport | undefined
+    value: Transport | undefined,
   ): value is SocketTransport {
     const candidate = value as SocketTransport;
     return (
@@ -68,15 +79,20 @@ export namespace MessageTransports {
 class Connection {
   private serverProcess: ChildProcess | undefined;
 
-   async createConnection(
+  async createConnection(
     serverOptions: ServerOptions,
     connectionOptions: ConnectionOptions,
     logger: Logger,
   ): Promise<ProtocolConnection> {
     const transports = await this.createMessageTransports(serverOptions);
 
-    const connection = createProtocolConnection(transports.reader, transports.writer, console, connectionOptions);
-    connection.onError((err) => {
+    const connection = createProtocolConnection(
+      transports.reader,
+      transports.writer,
+      console,
+      connectionOptions,
+    );
+    connection.onError(err => {
       message_emacs(`connection onError: ${err[1]}`);
     });
     connection.onClose(() => {
@@ -89,15 +105,17 @@ class Connection {
           const msg = `${messageOrDataObject}\n${data}`;
           logger?.info(msg);
         } else {
-          logger?.info(JSON.stringify(data))
+          logger?.info(JSON.stringify(data));
         }
-      }
-    })
+      },
+    });
 
     return connection;
   }
 
-  protected async createMessageTransports(server: ServerOptions): Promise<MessageTransports> {
+  protected async createMessageTransports(
+    server: ServerOptions,
+  ): Promise<MessageTransports> {
     const serverWorkingDir = await this.getServerWorkingDir(server.options);
 
     if (Executable.is(server) && server.command) {
@@ -106,7 +124,7 @@ class Connection {
       let pipeName: string | undefined = undefined;
       const transport = server.transport;
       if (transport === TransportKind.stdio) {
-        args.push("--stdio");
+        args.push('--stdio');
       } else if (transport === TransportKind.pipe) {
         pipeName = generateRandomPipeName();
         args.push(`--pipe=${pipeName}`);
@@ -114,13 +132,17 @@ class Connection {
         args.push(`--socket=${transport.port}`);
       } else if (transport === TransportKind.ipc) {
         throw new Error(
-          "Transport kind ipc is not support for command executable"
+          'Transport kind ipc is not support for command executable',
         );
       }
       const options = Object.assign({}, server.options);
       options.cwd = options.cwd || serverWorkingDir;
       if (transport === undefined || transport === TransportKind.stdio) {
-        message_emacs(`server ${server.command} ${args.join(' ')} ${JSON.stringify(options)}`)
+        message_emacs(
+          `server ${server.command} ${args.join(' ')} ${JSON.stringify(
+            options,
+          )}`,
+        );
         const serverProcess = spawn(server.command, args, options);
         if (!serverProcess || !serverProcess.pid) {
           const message = `Launching server using command ${server.command} failed.`;
@@ -128,7 +150,7 @@ class Connection {
             return Promise.reject<MessageTransports>(message);
           }
           return new Promise<MessageTransports>((_, reject) => {
-            process.on("error", (err) => {
+            process.on('error', err => {
               reject(`${message} ${err}`);
             });
             // the error event should always be run immediately,
@@ -136,11 +158,11 @@ class Connection {
             setImmediate(() => reject(message));
           });
         }
-        serverProcess.stderr.on("data", (data) =>
+        serverProcess.stderr.on('data', data =>
           console.error(
-            "server error: ",
-            Is.string(data) ? data : data.toString('utf8')
-          )
+            'server error: ',
+            Is.string(data) ? data : data.toString('utf8'),
+          ),
         );
         this.serverProcess = serverProcess;
         return Promise.resolve({
@@ -151,9 +173,8 @@ class Connection {
     }
     return Promise.reject<MessageTransports>(
       new Error(
-        "Unsupported server configuration " +
-          JSON.stringify(server, null, 4)
-      )
+        'Unsupported server configuration ' + JSON.stringify(server, null, 4),
+      ),
     );
   }
 
@@ -162,13 +183,13 @@ class Connection {
   }): Promise<string | undefined> {
     const cwd = options && options.cwd;
     // make sure the folder exists otherwise creating the process will fail
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       if (cwd) {
         lstat(cwd, (err, stats) => {
           resolve(!err && stats.isDirectory() ? cwd : undefined);
         });
       } else {
-        resolve(undefined)
+        resolve(undefined);
       }
     });
   }
