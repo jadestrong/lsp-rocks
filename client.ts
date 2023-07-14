@@ -566,7 +566,7 @@ export class LanguageClient {
       this._capabilities = Object.assign({}, result.capabilities, {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
-      this.initializeFeatures(connection);
+      this.initializeFeatures();
 
       await connection.sendNotification(InitializedNotification.type, {});
 

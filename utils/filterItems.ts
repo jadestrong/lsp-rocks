@@ -1,4 +1,4 @@
-import { InsertReplaceEdit, TextEdit, type CompletionItem } from "vscode-languageserver-protocol";
+import { InsertReplaceEdit, type CompletionItem } from "vscode-languageserver-protocol";
 import { byteSlice } from "./string";
 
 interface ExtendCompletionItem {
@@ -7,7 +7,9 @@ interface ExtendCompletionItem {
   originItem: CompletionItem
 }
 
-function guessPrefix(pretext: string, item: CompletionItem) {
+type PrefixMap = Record<number, [string, number[]]>;
+
+function guessPrefix(pretext: string, item: CompletionItem, prefixMap: PrefixMap): [string, number[]] {
   let startCharacter: number;
   const { textEdit } = item;
   if (textEdit && InsertReplaceEdit.is(textEdit)) {
@@ -15,18 +17,25 @@ function guessPrefix(pretext: string, item: CompletionItem) {
   } else if (textEdit) {
     startCharacter = textEdit.range.start.character;
   } else {
-    startCharacter =  Math.max(...['"', '’', '‘', '.', '(', '[', ' '].map(char => pretext.lastIndexOf(char))) + 1;
+    startCharacter =  Math.max(...['"', ':', '’', "'", '‘', '.', '(', '<', ' '].map(char => pretext.lastIndexOf(char))) + 1;
+  }
+  if (prefixMap[startCharacter] != null) {
+    return prefixMap[startCharacter];
   }
   const prefix = byteSlice(pretext, startCharacter).trim()
-  return prefix;
+  const codes = getCharCodes(prefix)
+  prefixMap[startCharacter] = [prefix, codes];
+  return [prefix, codes];
 }
 
-function filterItems(prefix: string, items: CompletionItem[]) {
+function filterItems(pretext: string, items: CompletionItem[]) {
+  const prefixMap: PrefixMap = {};
   const arr: ExtendCompletionItem[] = []
-  const len = prefix.length
-  const emptyInput = len === 0
-  const codes = getCharCodes(prefix)
+  // const len = prefix.length
+  // const codes = getCharCodes(prefix)
   for (let i = 0; i < items.length; i++) {
+    const [prefix, codes] = guessPrefix(pretext, items[i], prefixMap);
+    const emptyInput = prefix.length === 0
     const item: ExtendCompletionItem = {
       score: 0,
       originItem: items[i],
@@ -34,7 +43,7 @@ function filterItems(prefix: string, items: CompletionItem[]) {
     const { label } = item.originItem;
     const filterText = item.originItem.filterText ?? label
 
-    if (filterText.length < len) continue
+    if (filterText.length < prefix.length) continue
     if (!emptyInput) {
       let positions: ReadonlyArray<number> | undefined
       let score: number
@@ -70,8 +79,6 @@ function filterItems(prefix: string, items: CompletionItem[]) {
     const sb = b.originItem.sortText
     if (a.score !== b.score) return b.score - a.score
     if (sa && sb && sa !== sb) return sa < sb ? -1  : 1
-    if (prefix.length === 0) return 0
-
     return 0
   })
 

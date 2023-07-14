@@ -1,6 +1,5 @@
 import { ClientCapabilities, CompletionItem, CompletionParams, CompletionRegistrationOptions, CompletionRequest, CompletionResolveRequest, CompletionTriggerKind, InsertTextMode, MarkupKind, RegistrationType} from "vscode-languageserver-protocol";
 import { LanguageClient } from "../client";
-// import { message_emacs } from "../epc-utils";
 import { byteSlice } from "../utils/string";
 import { RunnableDynamicFeature, ensure } from "./features";
 import filterItems from "../utils/filterItems";
@@ -80,10 +79,6 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
       }
     }
 
-    const prefix = byteSlice(pretext, Math.max(...['"', '’', '‘', '.', '(', '[', ' '].map(char => pretext.lastIndexOf(char))) + 1, pretext.length).trim()
-
-    // message_emacs(`prefix ${prefix} ${triggerCharacter}`)
-
     const resp = await this.client.sendRequest(CompletionRequest.type, completionParams);
     // message_emacs('completion resp' + JSON.stringify(resp))
     if (resp == null) return [];
@@ -94,26 +89,7 @@ export class CompletionFeature extends RunnableDynamicFeature<EmacsCompletionPar
     }
 
     resp.items.forEach(it => labelCompletionMap.set(it.label, it));
-    const completions = filterItems(prefix, resp.items).slice(0, this.max_completion_size)
-    // const completions = resp
-    //   .items
-    //   .filter(it => (it.filterText ?? it.label).startsWith(prefix))
-    //   .slice(0, this.max_completion_size)
-    //   .sort((a, b) => {
-    //     if (a.sortText != undefined && b.sortText != undefined) {
-    //       if (a.sortText == b.sortText) {
-    //         return a.label.length - b.label.length;
-    //       }
-    //       return a.sortText < b.sortText ? -1 : 1;
-    //     }
-    //     return 0;
-    //   });
-
-    // const head = completions.shift()
-    // if (head != undefined) {
-    //   const resolvedHead = await this.client.sendRequest(CompletionResolveRequest.type, head);
-    //   completions.unshift(resolvedHead);
-    // }
+    const completions = filterItems(pretext, resp.items).slice(0, this.max_completion_size)
     return completions;
   }
 
