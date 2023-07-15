@@ -14,8 +14,10 @@ process.on('uncaughtException', err => {
 process.on('unhandledRejection', (reason, p) => {
   console.log('unhandledRejection err', reason, p);
   message_emacs(
-    'unhandledRejection err' +
+    'unhandledRejection err ' +
       reason +
+      ' message ' +
+      (reason as Error).message +
       ' stack ' +
       (reason as Error).stack +
       JSON.stringify(p),

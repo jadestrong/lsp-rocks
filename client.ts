@@ -77,6 +77,7 @@ import { Logger } from 'pino';
 import { createLogger } from './logger';
 import Connection, { ServerOptions } from './connection';
 import data2String from './utils/data2String';
+import methodRequirements from './constants/methodRequirements';
 
 enum ClientState {
   Initial = 'initial',
@@ -148,16 +149,14 @@ export class LanguageClient {
 
   private _initializeResult: InitializeResult | undefined;
 
-  private capabilities: ServerCapabilities;
+  capabilities: ServerCapabilities;
   // 记录 client/registerCapability 返回注册的能力
-  registeredServerCapabilities = new Map<
+  private registeredCapabilities = new Map<
     Registration['method'],
     Registration
   >();
 
   private _clientOptions: ResolvedClientOptions;
-
-  // private _fileVersions: Map<string, number>;
 
   private _features: DynamicFeature<any>[];
 
@@ -174,7 +173,6 @@ export class LanguageClient {
     this._language = language;
     this._clientInfo = clientInfo;
     this._serverOptions = serverOptions;
-    // this._fileVersions = new Map();
     this._features = [];
     this._dynamicFeatures = new Map();
     this._clientOptions = {
@@ -570,7 +568,8 @@ export class LanguageClient {
         `register ${registration.method}`,
         JSON.stringify(registration),
       );
-      this.registeredServerCapabilities.set(registration.method, registration);
+      // TODO 只需要处理 workspace/didChangeWatchedFiles
+      this.registeredCapabilities.set(registration.method, registration);
     }
   }
 
@@ -778,4 +777,10 @@ export class LanguageClient {
     SemanticTokensRangeRequest.method,
     SemanticTokensDeltaRequest.method,
   ]);
+
+  public checkCapabilityForMethod(method: string | MessageSignature) {
+    const methodName = Is.toMethod(method);
+    const { capability } = methodRequirements[methodName];
+    return !capability || this.capabilities[capability];
+  }
 }

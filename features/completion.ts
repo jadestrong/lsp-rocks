@@ -37,6 +37,9 @@ export class CompletionFeature extends RunnableDynamicFeature<
   }
 
   public async runWith(params: EmacsCompletionParams) {
+    if (!this.client.checkCapabilityForMethod(CompletionRequest.type)) {
+      return [];
+    }
     labelCompletionMap.clear();
     const { line, column, textDocument, position } = params;
 
@@ -82,23 +85,26 @@ export class CompletionFeature extends RunnableDynamicFeature<
 
 export class CompletionItemResolveFeature extends RunnableDynamicFeature<
   CompletionItem,
-  CompletionItem,
-  Promise<CompletionItem>,
+  CompletionItem | undefined,
+  Promise<CompletionItem | null>,
   void
 > {
   constructor(private client: LanguageClient) {
     super();
   }
 
-  public createParams(params: CompletionItem): CompletionItem {
+  public createParams(params: CompletionItem) {
     const item = labelCompletionMap.get(params.label);
-    if (item == undefined) {
-      throw new Error(`Can not find CompletionItem by label ${params.label}`);
-    }
     return item;
   }
 
-  public async runWith(params: CompletionItem) {
+  public async runWith(params: CompletionItem | undefined) {
+    if (
+      !this.client.checkCapabilityForMethod(CompletionResolveRequest.type) ||
+      !params
+    ) {
+      return null;
+    }
     return this.client.sendRequest(CompletionResolveRequest.type, params);
   }
 

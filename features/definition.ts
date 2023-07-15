@@ -6,9 +6,12 @@ import {
   Location,
   LocationLink,
 } from 'vscode-languageserver-protocol';
-import { LanguageClient } from '../client';
-import { RunnableDynamicFeature } from './features';
 import { fileURLToPath } from 'node:url';
+import { LanguageClient } from '../client';
+import methodRequirements from '../constants/methodRequirements';
+import { toMethod } from '../util';
+import { RunnableDynamicFeature } from './features';
+import { message_emacs } from '../epc-utils';
 
 export class DefinitionFeature extends RunnableDynamicFeature<
   DefinitionParams,
@@ -21,6 +24,9 @@ export class DefinitionFeature extends RunnableDynamicFeature<
   }
 
   public async runWith(params: DefinitionParams): Promise<Location[]> {
+    if (!this.client.checkCapabilityForMethod(DefinitionRequest.type)) {
+      return [];
+    }
     const resp = await this.client.sendRequest(DefinitionRequest.type, params);
     if (resp == null) return [];
 

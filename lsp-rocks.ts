@@ -1,4 +1,4 @@
-import { TextDocumentIdentifier } from 'vscode-languageserver-protocol';
+import { type TextDocumentIdentifier } from 'vscode-languageserver-protocol';
 import { URI } from 'vscode-uri';
 import { RPCServer } from 'ts-elrpc';
 import {
@@ -12,14 +12,6 @@ import {
 import { LanguageClient } from './client';
 import { toggleDebug } from './logger';
 
-interface InitParams {
-  language: string;
-  project: string;
-  command: string;
-  args: string[];
-  clientInfo: { name: string; version: string };
-}
-
 interface Message {
   id: string;
   cmd: string;
@@ -32,6 +24,14 @@ interface RequestMessage extends Message {
     textDocument: TextDocumentIdentifier;
     [key: string]: any;
   };
+}
+
+interface InitParams {
+  language: string;
+  project: string;
+  command: string;
+  args: string[];
+  clientInfo: { name: string; version: string };
 }
 
 export class LspRocks {

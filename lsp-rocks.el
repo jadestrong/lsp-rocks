@@ -494,7 +494,6 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (when (cl-plusp (length additionalTextEdits))
       (lsp-rocks--apply-text-edits additionalTextEdits))))
 
-(setq-local lsp-rocks--completion-trigger-characters nil)
 (defun lsp-rocks--get-match-buffer-by-filepath (name)
   (cl-dolist (buffer (buffer-list))
     (with-current-buffer buffer
@@ -858,30 +857,31 @@ Doubles as an indicator of snippet support."
 
 (defun lsp-rocks--process-find-definition (locations)
   ""
-  (funcall lsp-rocks--xref-callback
-           (cl-mapcar (lambda (it)
-                        (let* ((filepath (plist-get it :uri))
-                               (range (plist-get it :range))
-                               (start (plist-get range :start))
-                               (end (plist-get range :end))
-                               (start-line (plist-get start :line))
-                               (start-column (plist-get start :character))
-                               (end-line (plist-get end :line))
-                               (end-column (plist-get end :character)))
-                          (save-excursion
-                            (save-restriction
-                              (widen)
-                              (let* ((beg (lsp-rocks--lsp-position-to-point start))
-                                     (end (lsp-rocks--lsp-position-to-point end))
-                                     (bol (progn (goto-char beg) (line-beginning-position)))
-                                     (summary (buffer-substring bol (line-end-position)))
-                                     (hi-beg (- beg bol))
-                                     (hi-end (- (min (line-end-position) end) bol)))
-                                (when summary
-                                  (add-face-text-property hi-beg hi-end 'xref-match t summary))
-                                (xref-make summary
-                                           (xref-make-file-location filepath (1+ start-line) start-column)))))))
-                      locations)))
+  (when (and locations lsp-rocks--xref-callback)
+    (funcall lsp-rocks--xref-callback
+      (cl-mapcar (lambda (it)
+                   (let* ((filepath (plist-get it :uri))
+                           (range (plist-get it :range))
+                           (start (plist-get range :start))
+                           (end (plist-get range :end))
+                           (start-line (plist-get start :line))
+                           (start-column (plist-get start :character))
+                           (end-line (plist-get end :line))
+                           (end-column (plist-get end :character)))
+                     (save-excursion
+                       (save-restriction
+                         (widen)
+                         (let* ((beg (lsp-rocks--lsp-position-to-point start))
+                                 (end (lsp-rocks--lsp-position-to-point end))
+                                 (bol (progn (goto-char beg) (line-beginning-position)))
+                                 (summary (buffer-substring bol (line-end-position)))
+                                 (hi-beg (- beg bol))
+                                 (hi-end (- (min (line-end-position) end) bol)))
+                           (when summary
+                             (add-face-text-property hi-beg hi-end 'xref-match t summary))
+                           (xref-make summary
+                             (xref-make-file-location filepath (1+ start-line) start-column)))))))
+        locations))))
 
 (defface lsp-rocks-hover-posframe
   '((t :inherit tooltip))
@@ -1161,7 +1161,6 @@ Doubles as an indicator of snippet support."
 (defun lsp-rocks-register-internal-hooks ()
   "Register internal hooks."
   (message "run register internal hooks")
-  ;; (add-to-list 'company-backends 'company-lsp-rocks)
   (dolist (hook lsp-rocks--internal-hooks)
     (add-hook (car hook) (cdr hook) nil t)))
 
@@ -1169,18 +1168,10 @@ Doubles as an indicator of snippet support."
   (when buffer-file-name
     (if (epc:live-p lsp-rocks-process)
         (progn
+          (setq-local lsp-rocks--completion-trigger-characters nil)
           (lsp-rocks-register-internal-hooks)
           (lsp-rocks--did-open))
-      (lsp-rocks-start-process))
-    ;; TODO 如何延迟到已经 inited 之后再开始呢
-    ;; NOTE 使用自定义的hooks
-    ;; (if lsp-rocks-is-started
-    ;;     (progn
-    ;;       (lsp-rocks-register-internal-hooks)
-    ;;       (lsp-rocks--did-open)
-    ;;       )
-    ;;   (add-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks))
-    ))
+      (lsp-rocks-start-process))))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)
