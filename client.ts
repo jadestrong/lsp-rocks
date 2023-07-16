@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import { ChildProcess } from 'child_process';
 import * as Is from './util';
 
@@ -64,8 +63,6 @@ import { DefinitionFeature } from './features/definition';
 import { DeclarationFeature } from './features/declaration';
 import { ReferencesFeature } from './features/reference';
 import { ImplementationFeature } from './features/implementation';
-
-import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TypeDefinitionFeature } from './features/typeDefinition';
 import { HoverFeature } from './features/hover';
@@ -162,11 +159,14 @@ export class LanguageClient {
 
   private _dynamicFeatures: Map<string, DynamicFeature<any>>;
 
+  private serverConfig: ServerConfig | undefined;
+
   constructor(
     language: string,
     project: string,
     clientInfo: any,
     serverOptions: ServerOptions,
+    serverConfig: ServerConfig,
   ) {
     this._name = `${project}:${language}`;
     this._project = project;
@@ -183,6 +183,8 @@ export class LanguageClient {
         supportHtml: true,
       },
     };
+
+    this.serverConfig = serverConfig;
 
     this.logger = createLogger(language);
 
@@ -343,12 +345,7 @@ export class LanguageClient {
     }
   }
 
-  public async restart(): Promise<void> {
-    await this.stop();
-    await this.start();
-  }
-
-  public async start(): Promise<void> {
+  public async start() {
     if (this._state === ClientState.Stopping) {
       throw new Error(
         'Client is currently stopping. Can only restart a full stopped client',
@@ -409,19 +406,16 @@ export class LanguageClient {
     return this._onStart;
   }
 
+  public async restart() {
+    await this.stop();
+    await this.start();
+  }
+
   private async initialize(
     connection: ProtocolConnection,
     clientInfo: any,
   ): Promise<InitializeResult> {
-    // May language server need some initialization options.
-    const langSreverConfig = `./langserver/${this._language}.json`;
-    const initializationOptions = fs.existsSync(
-      path.join(__dirname, langSreverConfig),
-    )
-      ? require(langSreverConfig)
-      : {};
-    this._initializationOptions = initializationOptions;
-
+    const initializationOptions = this.serverConfig?.initializeOptions?.();
     const initParams: InitializeParams = {
       processId: process.pid,
       clientInfo,

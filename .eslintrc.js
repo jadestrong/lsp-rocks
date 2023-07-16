@@ -20,5 +20,7 @@ module.exports = {
     'no-trailing-spaces': 'error',
     '@typescript-eslint/no-namespace': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-var-requires': 'off',
   },
+  ignorePatterns: ['dist/', 'node_modules/'],
 };

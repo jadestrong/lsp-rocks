@@ -1,5 +1,6 @@
-import { type TextDocumentIdentifier } from 'vscode-languageserver-protocol';
 import { URI } from 'vscode-uri';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { RPCServer } from 'ts-elrpc';
 import {
   eval_in_emacs,
@@ -11,20 +12,6 @@ import {
 } from './epc-utils';
 import { LanguageClient } from './client';
 import { toggleDebug } from './logger';
-
-interface Message {
-  id: string;
-  cmd: string;
-}
-
-interface RequestMessage extends Message {
-  lang: string;
-  project: string;
-  params: {
-    textDocument: TextDocumentIdentifier;
-    [key: string]: any;
-  };
-}
 
 interface InitParams {
   language: string;
@@ -46,9 +33,6 @@ export class LspRocks {
   constructor() {
     this._clients = new Map();
     this.recentRequests = new Map();
-    // importLangServers().then(configs => {
-    //   this._langServerMap = configs
-    // })
   }
 
   public async start() {
@@ -106,6 +90,10 @@ export class LspRocks {
     }
 
     const client = await this.ensureClient(projectRoot);
+    if (!client) {
+      message_emacs(`No client found for this project ${projectRoot}`);
+      return;
+    }
 
     if (
       this.recentRequests.get(req.cmd) != req.id &&
@@ -135,32 +123,39 @@ export class LspRocks {
     };
   }
 
-  private async ensureClient(clientId: string): Promise<LanguageClient> {
-    let client = this._clients.get(clientId);
-    if (client === undefined) {
-      const params = await get_emacs_func_result<InitParams>('lsp-rocks--init');
-      if (params != undefined) {
-        client = new LanguageClient(
-          params.language,
-          params.project,
-          params.clientInfo,
-          {
-            command: params.command,
-            args: params.args,
-            options: { cwd: params.project },
-          },
-        );
-        this._clients.set(clientId, client);
-        await client.start();
-      } else {
-        message_emacs(
-          'Can not create LanguageClient, because language and project is undefined',
-        );
-        throw new Error(
-          'Can not create LanguageClient, because language and project is undefined',
-        );
-      }
+  private async ensureClient(projectRoot: string) {
+    let client = this._clients.get(projectRoot);
+    if (client) {
+      return client;
     }
+    const params = await get_emacs_func_result<InitParams>('lsp-rocks--init');
+    if (!params) {
+      throw new Error(
+        'Can not create LanguageClient, because language and project is undefined',
+      );
+    }
+    const { language, project, clientInfo } = params;
+    const configFile = `./langserver/${language}.js`;
+    const configPath = path.join(__dirname, configFile);
+    const config: ServerConfig = fs.existsSync(configPath)
+      ? require(configFile)
+      : undefined;
+    if (!config.activate(project)) {
+      return;
+    }
+    client = new LanguageClient(
+      language,
+      project,
+      clientInfo,
+      {
+        command: config.command,
+        args: config.args,
+        options: { cwd: project },
+      },
+      config,
+    );
+    this._clients.set(projectRoot, client);
+    await client.start();
 
     return client;
   }
