@@ -62,4 +62,12 @@ module.exports = {
       fs.existsSync(path.join(workspaceRoot, configFile)),
     );
   },
+  initializedFn: result => {
+    // NOTE Workaround the problem that company-mode completion not work when typing \"-\" in classname.
+    // As company-grap-symbol return nil when before char isn't a symbol.
+    if (result.capabilities.completionProvider.triggerCharacters) {
+      result.capabilities.completionProvider.triggerCharacters.push('-');
+    }
+    return result;
+  },
 };

@@ -192,14 +192,7 @@ export class LanguageClient {
   }
 
   get triggerCharacters() {
-    const triggerCharacters =
-      this.capabilities.completionProvider?.triggerCharacters ?? [];
-    if (this._language === 'tailwindcss') {
-      // NOTE Workaround the problem that company-mode completion not work when typing \"-\" in classname.
-      // As company-grap-symbol return nil when before char isn't a symbol.
-      return [...triggerCharacters, '-'];
-    }
-    return triggerCharacters ?? [];
+    return this.capabilities.completionProvider?.triggerCharacters ?? [];
   }
 
   public sendRequest<R, PR, E, RO>(
@@ -572,10 +565,13 @@ export class LanguageClient {
     initParams: InitializeParams,
   ): Promise<InitializeResult> {
     try {
-      const result = await connection.sendRequest(
+      let result = await connection.sendRequest(
         InitializeRequest.type,
         initParams,
       );
+      if (this.serverConfig?.initializedFn) {
+        result = this.serverConfig.initializedFn(result);
+      }
       if (
         result.capabilities.positionEncoding !== undefined &&
         result.capabilities.positionEncoding !== PositionEncodingKind.UTF16

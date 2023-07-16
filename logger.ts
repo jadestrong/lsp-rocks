@@ -15,7 +15,7 @@ export const createLogger = (clientName: string) => {
   const transport = pino.transport({
     targets: [
       {
-        level: 'debug',
+        level: IS_DEBUG ? 'debug' : 'info',
         target: 'pino-pretty',
         options: {
           destination: logfile,

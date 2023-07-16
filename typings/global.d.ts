@@ -1,4 +1,7 @@
-import { type TextDocumentIdentifier } from 'vscode-languageserver-protocol';
+import {
+  InitializeResult,
+  type TextDocumentIdentifier,
+} from 'vscode-languageserver-protocol';
 
 declare global {
   interface Message {
@@ -23,5 +26,6 @@ declare global {
     settings: Record<string, unknown>; // default is a {}
     initializeOptions?: () => Record<string, unknown>; // default return settings
     activate: (workspaceRoot: string) => boolean; // default return false
+    initializedFn?: (result: InitializeResult) => InitializeResult;
   }
 }
