@@ -12,6 +12,9 @@ import {
 } from './epc-utils';
 import { LanguageClient } from './client';
 import { toggleDebug } from './logger';
+import { importLangServers } from './utils/importLangServers';
+import executable from './utils/executable';
+import languageIdMap from './constants/languageIdMap';
 
 interface InitParams {
   language: string;
@@ -25,10 +28,10 @@ export class LspRocks {
   private _server: RPCServer | null;
 
   readonly filePathToProject: Map<string, string> = new Map();
-  readonly _clients: Map<string, LanguageClient>;
+  readonly _clients: Map<string, LanguageClient[] | undefined>;
 
   readonly recentRequests: Map<string, any>;
-  _langServerMap: Record<string, any>;
+  configs: ServerConfig[] = [];
 
   constructor() {
     this._clients = new Map();
@@ -64,6 +67,9 @@ export class LspRocks {
     this._server?.defineMethod('get-elrpc-logfile', async () => {
       return this._server?.logfile ?? '';
     });
+
+    this.configs = await importLangServers();
+    message_emacs('config length ' + this.configs.length);
   }
 
   public async messageHandler(req: RequestMessage) {
@@ -89,8 +95,8 @@ export class LspRocks {
       this.filePathToProject.set(uri, projectRoot);
     }
 
-    const client = await this.ensureClient(projectRoot);
-    if (!client) {
+    const clients = await this.ensureClient(projectRoot, filepath);
+    if (!clients?.length) {
       message_emacs(`No client found for this project ${projectRoot}`);
       return;
     }
@@ -104,15 +110,17 @@ export class LspRocks {
 
     if (req.cmd === 'textDocument/didOpen') {
       // 如果 didOpen 事件，则在当前 buffer 设置 triggerCharacters
-      const triggerCharacters = client.triggerCharacters;
+      const triggerCharacters = clients.map(client => client.triggerCharacters);
       eval_in_emacs(
         'lsp-rocks--record-trigger-characters',
         filepath,
         triggerCharacters,
       );
     }
-
-    data = await client.on(req.cmd, req.params);
+    data = await Promise.race(
+      clients.map(client => client.on(req.cmd, req.params)),
+    );
+    // data = await client.on(req.cmd, req.params);
     if (this.recentRequests.get(req.cmd) != req.id) {
       return;
     }
@@ -123,30 +131,73 @@ export class LspRocks {
     };
   }
 
-  private async ensureClient(projectRoot: string) {
-    let client = this._clients.get(projectRoot);
-    if (client) {
-      return client;
+  private async ensureClient(projectRoot: string, filePath: string) {
+    // find all support current file's config
+    // find workspace?
+    const extension = path.extname(filePath);
+    const languageId = languageIdMap[extension];
+    if (!languageId) {
+      throw new Error(`Not support current file type ${extension}.`);
     }
-    const params = await get_emacs_func_result<InitParams>('lsp-rocks--init');
-    if (!params) {
-      throw new Error(
-        'Can not create LanguageClient, because language and project is undefined',
-      );
+
+    const configs = this.findClients(filePath, projectRoot);
+    if (!configs.length) {
+      throw new Error(`No LSP server for ${filePath}.`);
     }
-    const { language, project, clientInfo } = params;
-    const configFile = `./langserver/${language}.js`;
-    const configPath = path.join(__dirname, configFile);
-    const config: ServerConfig = fs.existsSync(configPath)
-      ? require(configFile)
-      : undefined;
-    if (!config.activate(project)) {
-      return;
+    // TODO logger.info
+    message_emacs(
+      `Found the following clients for ${filePath}: ${configs
+        .map(item => item.name)
+        .join('  ')}`,
+    );
+    let clients = this._clients.get(projectRoot);
+    if (clients) {
+      return clients;
     }
-    client = new LanguageClient(
+    // const params = await get_emacs_func_result<InitParams>('lsp-rocks--init');
+    // if (!params) {
+    //   throw new Error(
+    //     'Can not create LanguageClient, because language and project is undefined',
+    //   );
+    // }
+    // const { language, project } = params;
+    clients = (
+      await Promise.all(
+        configs.map(config =>
+          this.createClient(languageId, projectRoot, config),
+        ),
+      )
+    ).filter((client): client is LanguageClient => !!client);
+
+    this._clients.set(projectRoot, clients);
+    return clients;
+  }
+
+  findClients(filepath: string, projectRoot: string) {
+    const extname = path.extname(filepath);
+    return this.configs
+      .filter(
+        config =>
+          config.supportExtensions.includes(extname) ||
+          config.supportExtensions.includes(extname.slice(1)),
+      )
+      .filter(item => executable(item.command))
+      .filter(item => item.activate(filepath, projectRoot));
+  }
+
+  private async createClient(
+    language: string,
+    project: string,
+    config: ServerConfig,
+  ) {
+    // const configFile = `./langserver/${language}.js`;
+    // const configPath = path.join(__dirname, configFile);
+    // const config: ServerConfig = fs.existsSync(configPath)
+    //   ? require(configFile)
+    //   : undefined;
+    const client = new LanguageClient(
       language,
       project,
-      clientInfo,
       {
         command: config.command,
         args: config.args,
@@ -154,7 +205,6 @@ export class LspRocks {
       },
       config,
     );
-    this._clients.set(projectRoot, client);
     await client.start();
 
     return client;

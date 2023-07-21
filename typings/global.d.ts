@@ -25,7 +25,7 @@ declare global {
     supportExtensions: string[];
     settings: Record<string, unknown>; // default is a {}
     initializeOptions?: () => Record<string, unknown>; // default return settings
-    activate: (workspaceRoot: string) => boolean; // default return false
+    activate: (filepath: string, workspaceRoot: string) => boolean; // default return false
     initializedFn?: (result: InitializeResult) => InitializeResult;
   }
 }

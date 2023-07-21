@@ -1,10 +1,10 @@
-import { readdir } from "fs"
-import { join } from "path";
+import { readdir } from 'fs';
+import { join } from 'path';
 
-const langServerPath = '../langserver/'
+const langServerPath = join(__dirname, '../langserver/');
 
 export function importLangServers() {
-  return new Promise<Record<string, any>>((resolve, reject) => {
+  return new Promise<ServerConfig[]>((resolve, reject) => {
     readdir(langServerPath, async (err, files) => {
       if (err) {
         reject(err);
@@ -12,17 +12,14 @@ export function importLangServers() {
       }
       const tasks = files
         .filter(file => file.endsWith('.ts'))
-        .map(async (file) => {
+        .map(async file => {
           const filePath = join(langServerPath, file);
-          const { default: config } = await import(filePath)
+          const { default: config } = await import(filePath);
           return config;
         });
 
       const configs = await Promise.all(tasks);
-      return resolve(configs.reduce((prev, cur) => {
-        prev[cur.name] = cur;
-        return prev;
-      }, {}));
-    })
-  })
+      return resolve(configs);
+    });
+  });
 }

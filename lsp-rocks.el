@@ -268,11 +268,12 @@ Setting this to nil or 0 will turn off the indicator."
 
 (defvar lsp-rocks-language-server-configuration
   (list (list 'rust-mode (list :name "rust" :command "rust-analyzer" :args (vector)))
-        (list 'python-mode (list :name "python" :command "pyright-langserver" :args (vector "--stdio")))
-        (list 'java-mode (list :name "java" :command "jdtls" :args (vector)))
-        (list 'typescript-mode (list :name "typescript" :command "typescript-language-server" :args (vector "--stdio")))
-        (list 'tsx-ts-mode (list :name "tailwindcss" :command "tailwindcss-language-server" :args (list "--stdio")))
-        ))
+    (list 'python-mode (list :name "python" :command "pyright-langserver" :args (vector "--stdio")))
+    (list 'java-mode (list :name "java" :command "jdtls" :args (vector)))
+    (list 'typescript-mode (list :name "typescript" :command "typescript-language-server" :args (vector "--stdio")))
+    ;; (list 'tsx-ts-mode (list :name "tailwindcss" :command "tailwindcss-language-server" :args (list "--stdio")))
+    (list 'tsx-ts-mode (list "tailwindcss" "eslint"))
+    ))
 
 (defvar lsp-rocks-language-id-map
   '((".vue" . "vue")
@@ -367,12 +368,13 @@ Setting this to nil or 0 will turn off the indicator."
 (defun lsp-rocks--init ()
   (let* ((config (lsp-rocks--buffer-language-conf))
          (language (plist-get config :name))
-         (command (plist-get config :command))
-         (args (plist-get config :args)))
+         ;; (command (plist-get config :command))
+         ;; (args (plist-get config :args))
+          )
     (list :project (lsp-rocks--suggest-project-root)
           :language language
-          :command command
-          :args args
+          ;; :command command
+          ;; :args args
           :clientInfo (list :name "Emacs" :version (emacs-version)))))
 
 (defun lsp-rocks--message-handler (msg)

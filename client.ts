@@ -142,8 +142,6 @@ export class LanguageClient {
 
   private _connection: ProtocolConnection | undefined;
 
-  private _clientInfo: any;
-
   private _initializeResult: InitializeResult | undefined;
 
   capabilities: ServerCapabilities;
@@ -164,14 +162,12 @@ export class LanguageClient {
   constructor(
     language: string,
     project: string,
-    clientInfo: any,
     serverOptions: ServerOptions,
     serverConfig: ServerConfig,
   ) {
     this._name = `${project}:${language}`;
     this._project = project;
     this._language = language;
-    this._clientInfo = clientInfo;
     this._serverOptions = serverOptions;
     this._features = [];
     this._dynamicFeatures = new Map();
@@ -356,7 +352,7 @@ export class LanguageClient {
     try {
       const connection = await new Connection().createConnection(
         this._serverOptions,
-        this._clientInfo.connectionOptions,
+        {},
         this.logger,
       );
       connection.onNotification(LogMessageNotification.type, message => {
@@ -385,7 +381,7 @@ export class LanguageClient {
         this.handleRegistrationRequest(params),
       );
 
-      await this.initialize(connection, this._clientInfo);
+      await this.initialize(connection);
       resolve();
     } catch (error) {
       this._state = ClientState.StartFailed;
@@ -406,12 +402,14 @@ export class LanguageClient {
 
   private async initialize(
     connection: ProtocolConnection,
-    clientInfo: any,
   ): Promise<InitializeResult> {
     const initializationOptions = this.serverConfig?.initializeOptions?.();
     const initParams: InitializeParams = {
       processId: process.pid,
-      clientInfo,
+      clientInfo: {
+        name: 'Emacs',
+        version: 'GNU Emacs',
+      },
       locale: 'en',
       rootPath: this._project,
       rootUri: pathToFileURL(this._project).toString(),
