@@ -34,7 +34,9 @@
 (require 'company)
 (require 'epc)
 (require 'yasnippet nil t)
+(require 'flycheck)
 
+(defvar lsp-rocks-mode) ;; properly defined by define-minor-mode below
 (declare-function projectile-project-root "ext:projectile")
 (declare-function yas-expand-snippet "ext:yasnippet")
 
@@ -268,12 +270,12 @@ Setting this to nil or 0 will turn off the indicator."
 
 (defvar lsp-rocks-language-server-configuration
   (list (list 'rust-mode (list :name "rust" :command "rust-analyzer" :args (vector)))
-    (list 'python-mode (list :name "python" :command "pyright-langserver" :args (vector "--stdio")))
-    (list 'java-mode (list :name "java" :command "jdtls" :args (vector)))
-    (list 'typescript-mode (list :name "typescript" :command "typescript-language-server" :args (vector "--stdio")))
-    ;; (list 'tsx-ts-mode (list :name "tailwindcss" :command "tailwindcss-language-server" :args (list "--stdio")))
-    (list 'tsx-ts-mode (list "tailwindcss" "eslint"))
-    ))
+        (list 'python-mode (list :name "python" :command "pyright-langserver" :args (vector "--stdio")))
+        (list 'java-mode (list :name "java" :command "jdtls" :args (vector)))
+        (list 'typescript-mode (list :name "typescript" :command "typescript-language-server" :args (vector "--stdio")))
+        ;; (list 'tsx-ts-mode (list :name "tailwindcss" :command "tailwindcss-language-server" :args (list "--stdio")))
+        (list 'tsx-ts-mode (list "tailwindcss" "eslint"))
+        ))
 
 (defvar lsp-rocks-language-id-map
   '((".vue" . "vue")
@@ -370,7 +372,7 @@ Setting this to nil or 0 will turn off the indicator."
          (language (plist-get config :name))
          ;; (command (plist-get config :command))
          ;; (args (plist-get config :args))
-          )
+         )
     (list :project (lsp-rocks--suggest-project-root)
           :language language
           ;; :command command
@@ -861,29 +863,29 @@ Doubles as an indicator of snippet support."
   ""
   (when (and locations lsp-rocks--xref-callback)
     (funcall lsp-rocks--xref-callback
-      (cl-mapcar (lambda (it)
-                   (let* ((filepath (plist-get it :uri))
-                           (range (plist-get it :range))
-                           (start (plist-get range :start))
-                           (end (plist-get range :end))
-                           (start-line (plist-get start :line))
-                           (start-column (plist-get start :character))
-                           (end-line (plist-get end :line))
-                           (end-column (plist-get end :character)))
-                     (save-excursion
-                       (save-restriction
-                         (widen)
-                         (let* ((beg (lsp-rocks--lsp-position-to-point start))
-                                 (end (lsp-rocks--lsp-position-to-point end))
-                                 (bol (progn (goto-char beg) (line-beginning-position)))
-                                 (summary (buffer-substring bol (line-end-position)))
-                                 (hi-beg (- beg bol))
-                                 (hi-end (- (min (line-end-position) end) bol)))
-                           (when summary
-                             (add-face-text-property hi-beg hi-end 'xref-match t summary))
-                           (xref-make summary
-                             (xref-make-file-location filepath (1+ start-line) start-column)))))))
-        locations))))
+             (cl-mapcar (lambda (it)
+                          (let* ((filepath (plist-get it :uri))
+                                 (range (plist-get it :range))
+                                 (start (plist-get range :start))
+                                 (end (plist-get range :end))
+                                 (start-line (plist-get start :line))
+                                 (start-column (plist-get start :character))
+                                 (end-line (plist-get end :line))
+                                 (end-column (plist-get end :character)))
+                            (save-excursion
+                              (save-restriction
+                                (widen)
+                                (let* ((beg (lsp-rocks--lsp-position-to-point start))
+                                       (end (lsp-rocks--lsp-position-to-point end))
+                                       (bol (progn (goto-char beg) (line-beginning-position)))
+                                       (summary (buffer-substring bol (line-end-position)))
+                                       (hi-beg (- beg bol))
+                                       (hi-end (- (min (line-end-position) end) bol)))
+                                  (when summary
+                                    (add-face-text-property hi-beg hi-end 'xref-match t summary))
+                                  (xref-make summary
+                                             (xref-make-file-location filepath (1+ start-line) start-column)))))))
+                        locations))))
 
 (defface lsp-rocks-hover-posframe
   '((t :inherit tooltip))
@@ -1135,7 +1137,35 @@ Doubles as an indicator of snippet support."
   (lsp-rocks-mode -1)
   (lsp-rocks--did-close))
 
+(defvar lsp-rocks--on-idle-timer nil)
+
+(defcustom lsp-rocks-idle-delay 0.500
+  "Debounce interval for `after-change-functions'."
+  :type 'number
+  :group 'lsp-rocks)
+
+(defcustom lsp-rocks-on-idle-hook nil
+  "Hooks to run after `lsp-rocks-idle-delay'."
+  :type 'hook
+  :group 'lsp-rocks)
+
+(defun lsp-rocks--idle-reschedule (buffer)
+  (when lsp-rocks--on-idle-timer
+    (cancel-timer lsp-rocks--on-idle-timer))
+  (setq lsp-rocks--on-idle-timer (run-with-idle-timer
+                                   lsp-rocks-idle-delay
+                                   nil
+                                   #'lsp-rocks--on-idle
+                                   buffer)))
+(defun lsp-rocks--on-idle (buffer)
+  "Start post command loop."
+  (when (and (buffer-live-p buffer)
+          (equal buffer (current-buffer))
+          lsp-rocks-mode)
+    (run-hooks 'lsp-rocks-on-idle-hook)))
+
 (defun lsp-rocks--post-command-hook ()
+  (lsp-rocks--idle-reschedule (current-buffer))
   (let ((this-command-string (format "%s" this-command)))
 
     (unless (member this-command-string '("self-insert-command" "company-complete-selection" "yas-next-field-or-maybe-expand"))
@@ -1165,6 +1195,22 @@ Doubles as an indicator of snippet support."
   (message "run register internal hooks")
   (dolist (hook lsp-rocks--internal-hooks)
     (add-hook (car hook) (cdr hook) nil t)))
+
+(defun lsp-rocks-diagnostics--flycheck-start (checker callback)
+  "Start an LSP syntax check with CHECKER.
+CALLBACK is the status callback passed by Flycheck."
+  )
+
+(defun lsp-rocks-diagnostics--flycheck-report
+  "Report flycheck.
+This callback is invoked when new diagnostics are received
+from the language server.")
+
+(flycheck-define-generic-checker 'lsp-rocks
+  "A syntax checker using the langauge server protocol provided by lsp-rocks."
+  :start #'lsp-rocks-diagnostics--flycheck-start
+  :modes '(lsp-rocks-placeholder-mode)
+  :predicate (lambda () lsp-rocks-mode))
 
 (defun lsp-rocks--enable ()
   (when buffer-file-name

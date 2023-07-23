@@ -1,6 +1,4 @@
-import { ChildProcess } from 'child_process';
-import * as Is from './util';
-
+import { pathToFileURL } from 'node:url';
 import {
   CancellationToken,
   ErrorCodes,
@@ -32,21 +30,16 @@ import {
   RequestHandler,
   GenericRequestHandler,
   Disposable,
-  DocumentSelector,
   RegistrationParams,
   RegistrationRequest,
   Registration,
   SymbolKind,
   MarkupKind,
   InsertTextMode,
+  ConfigurationRequest,
 } from 'vscode-languageserver-protocol';
-
-import {
-  CancellationStrategy,
-  MessageSignature,
-  RAL,
-  ResponseError,
-} from 'vscode-jsonrpc/node';
+import { MessageSignature, RAL, ResponseError } from 'vscode-jsonrpc/node';
+import { Logger } from 'pino';
 import { DynamicFeature, RunnableDynamicFeature } from './features/features';
 import {
   DidChangeTextDocumentFeature,
@@ -63,17 +56,15 @@ import { DefinitionFeature } from './features/definition';
 import { DeclarationFeature } from './features/declaration';
 import { ReferencesFeature } from './features/reference';
 import { ImplementationFeature } from './features/implementation';
-import { pathToFileURL } from 'node:url';
 import { TypeDefinitionFeature } from './features/typeDefinition';
 import { HoverFeature } from './features/hover';
 import { SignatureHelpFeature } from './features/signatureHelp';
 import { PrepareRenameFeature, RenameFeature } from './features/rename';
-import { logger, message_emacs } from './epc-utils';
-import { ConfigurationFeature } from './features/configuration';
-import { Logger } from 'pino';
-import { createLogger } from './logger';
-import Connection, { ServerOptions } from './connection';
+import { message_emacs } from './epc-utils';
+import { createLogger, logger } from './logger';
+import Connection from './connection';
 import data2String from './utils/data2String';
+import * as Is from './util';
 import methodRequirements from './constants/methodRequirements';
 
 enum ClientState {
@@ -85,105 +76,40 @@ enum ClientState {
   Stopped = 'stopped',
 }
 
-/**
- * Signals in which state the language client is in.
- */
-export enum State {
-  /**
-   * The client is stopped or got never started.
-   */
-  Stopped = 1,
-  /**
-   * The client is starting but not ready yet.
-   */
-  Starting = 3,
-  /**
-   * The client is running and ready.
-   */
-  Running = 2,
-}
-
-type ResolvedClientOptions = {
-  stdioEncoding: string;
-  initializationOptions?: any | (() => any);
-  progressOnInitialization: boolean;
-  documentSelector?: DocumentSelector;
-  connectionOptions?: {
-    cancellationStrategy?: CancellationStrategy;
-    maxRestartCount?: number;
-  };
-  markdown: {
-    isTrusted: boolean;
-    supportHtml: boolean;
-  };
-  disableDynamicRegister?: boolean;
-};
-
 export class LanguageClient {
-  readonly _project: string;
-
-  readonly _language: string;
-
-  readonly _name: string;
-
-  _initializationOptions: any;
-
-  logger: Logger;
-
-  private readonly _serverOptions: ServerOptions;
-
-  private _serverProcess: ChildProcess | undefined;
-
-  private _state: ClientState;
-
-  private _onStart: Promise<void> | undefined;
-
-  private _onStop: Promise<void> | undefined;
-
-  private _connection: ProtocolConnection | undefined;
-
-  private _initializeResult: InitializeResult | undefined;
-
+  readonly name: string;
+  readonly projectRoot: string;
+  readonly logger: Logger;
   capabilities: ServerCapabilities;
+  serverConfig: ServerConfig | undefined;
+  filePathToProject: Map<string, string> = new Map();
+  private features: DynamicFeature<any>[];
   // 记录 client/registerCapability 返回注册的能力
   private registeredCapabilities = new Map<
     Registration['method'],
     Registration
   >();
+  private connection: ProtocolConnection | undefined;
 
-  private _clientOptions: ResolvedClientOptions;
+  private _state: ClientState;
+  private _onStart: Promise<void> | undefined;
+  private _onStop: Promise<void> | undefined;
 
-  private _features: DynamicFeature<any>[];
-
-  private _dynamicFeatures: Map<string, DynamicFeature<any>>;
-
-  private serverConfig: ServerConfig | undefined;
+  private dynamicFeatures: Map<string, DynamicFeature<any>>;
 
   constructor(
-    language: string,
-    project: string,
-    serverOptions: ServerOptions,
+    name: string,
+    projectRoot: string,
     serverConfig: ServerConfig,
+    filePathToProject: Map<string, string>,
   ) {
-    this._name = `${project}:${language}`;
-    this._project = project;
-    this._language = language;
-    this._serverOptions = serverOptions;
-    this._features = [];
-    this._dynamicFeatures = new Map();
-    this._clientOptions = {
-      stdioEncoding: 'utf-8',
-      progressOnInitialization: false,
-      markdown: {
-        isTrusted: true,
-        supportHtml: true,
-      },
-    };
-
+    this.name = name;
+    this.projectRoot = projectRoot;
     this.serverConfig = serverConfig;
-
-    this.logger = createLogger(language);
-
+    this.filePathToProject = filePathToProject;
+    this.features = [];
+    this.dynamicFeatures = new Map();
+    this.logger = createLogger(this.name);
     this.registerBuiltinFeatures();
   }
 
@@ -232,7 +158,7 @@ export class LanguageClient {
       );
     }
     try {
-      return await this._connection?.sendRequest<R>(
+      return await this.connection?.sendRequest<R>(
         Is.toMethod(type),
         ...params,
       );
@@ -277,7 +203,7 @@ export class LanguageClient {
       throw new Error('Language client is not ready yet');
     }
     try {
-      return this._connection?.onRequest(Is.toMethod(type), (...params) => {
+      return this.connection?.onRequest(Is.toMethod(type), (...params) => {
         return handler.call(null, ...params);
       });
     } catch (error) {
@@ -321,10 +247,7 @@ export class LanguageClient {
     }
     try {
       // logger.info(`[sendNotification] ${Is.toMethod(type)}`, params)
-      return await this._connection?.sendNotification(
-        Is.toMethod(type),
-        params,
-      );
+      return await this.connection?.sendNotification(Is.toMethod(type), params);
     } catch (error) {
       this.error(
         `Sending notification ${Is.string(type) ? type : type.method} failed.`,
@@ -350,8 +273,15 @@ export class LanguageClient {
 
     this._state = ClientState.Starting;
     try {
+      const { command = '', args } = this.serverConfig ?? {};
       const connection = await new Connection().createConnection(
-        this._serverOptions,
+        {
+          command,
+          args,
+          options: {
+            cwd: this.projectRoot,
+          },
+        },
         {},
         this.logger,
       );
@@ -370,9 +300,9 @@ export class LanguageClient {
             console.log(message.message);
         }
       });
+
       connection.listen();
-      this._connection = connection;
-      this.initializeFeatures();
+      this.connection = connection;
 
       connection.onRequest(RegistrationRequest.type, params =>
         this.handleRegistrationRequest(params),
@@ -380,13 +310,25 @@ export class LanguageClient {
       connection.onRequest('client/registerFeature', params =>
         this.handleRegistrationRequest(params),
       );
+      connection.onRequest(ConfigurationRequest.type, params => {
+        const { serverConfig } = this;
+        return serverConfig?.configuration
+          ? serverConfig.configuration(params.items, this.filePathToProject)
+          : [serverConfig?.initializeOptions];
+      });
+
+      connection.onNotification('textDocument/publishDiagnostics', params => {
+        logger.info({
+          data: params,
+        });
+      });
 
       await this.initialize(connection);
       resolve();
     } catch (error) {
       this._state = ClientState.StartFailed;
       this.error(
-        `${this._name} client: couldn't create connection to server. ${
+        `${this.name} client: couldn't create connection to server. ${
           (error as Error).message
         }`,
       );
@@ -411,8 +353,8 @@ export class LanguageClient {
         version: 'GNU Emacs',
       },
       locale: 'en',
-      rootPath: this._project,
-      rootUri: pathToFileURL(this._project).toString(),
+      rootPath: this.projectRoot,
+      rootUri: pathToFileURL(this.projectRoot).toString(),
       capabilities: {
         general: {
           positionEncodings: ['utf-32', 'utf-16'],
@@ -425,7 +367,7 @@ export class LanguageClient {
           applyEdit: true,
           symbol: {
             symbolKind: {
-              valueSet: Array.from({ length: 25 }).map(
+              valueSet: Array.from({ length: 26 }).map(
                 (_, idx) => idx + 1,
               ) as SymbolKind[],
             },
@@ -446,30 +388,30 @@ export class LanguageClient {
             willSaveWaitUntil: true,
           },
           // documentSymbol: { symbolKind }
-          // formatting: { dynamicRegistration: true },
-          // rangeFormatting: { dynamicRegistration: true },
-          // onTypeFormatting: { dynamicRegistration: true },
-          // rename: { dynamicRegistration: true, prepareSupport: true },
-          // codeAction: {
-          //   dynamicRegistration: true,
-          //   isPreferredSupport: true,
-          //   codeActionLiteralSupport: {
-          //     codeActionKind: {
-          //       valueSet: [
-          //         '',
-          //         "quickfix",
-          //         "refactor",
-          //         "refactor.extract",
-          //         "refactor.inline",
-          //         "refactor.rewrite",
-          //         "source",
-          //         "source.organizeImports"
-          //       ],
-          //     },
-          //   },
-          //   resolveSupport: { properties: ['edit', 'command'] },
-          //   dataSupport: true,
-          // },
+          formatting: { dynamicRegistration: true },
+          rangeFormatting: { dynamicRegistration: true },
+          onTypeFormatting: { dynamicRegistration: true },
+          rename: { dynamicRegistration: true, prepareSupport: true },
+          codeAction: {
+            dynamicRegistration: true,
+            isPreferredSupport: true,
+            codeActionLiteralSupport: {
+              codeActionKind: {
+                valueSet: [
+                  '',
+                  'quickfix',
+                  'refactor',
+                  'refactor.extract',
+                  'refactor.inline',
+                  'refactor.rewrite',
+                  'source',
+                  'source.organizeImports',
+                ],
+              },
+            },
+            resolveSupport: { properties: ['edit', 'command'] },
+            dataSupport: true,
+          },
           completion: {
             dynamicRegistration: true,
             contextSupport: true,
@@ -498,8 +440,8 @@ export class LanguageClient {
       initializationOptions,
       workspaceFolders: [
         {
-          uri: pathToFileURL(this._project).toString(),
-          name: this._project.slice(this._project.lastIndexOf('/')),
+          uri: pathToFileURL(this.projectRoot).toString(),
+          name: this.projectRoot.slice(this.projectRoot.lastIndexOf('/')),
         },
       ],
     };
@@ -509,10 +451,10 @@ export class LanguageClient {
 
   public registerFeature(feature: DynamicFeature<any>): void {
     // 这里收集 feature
-    this._features.push(feature);
+    this.features.push(feature);
     if (DynamicFeature.is(feature)) {
       const registrationType = feature.registrationType;
-      this._dynamicFeatures.set(registrationType.method, feature);
+      this.dynamicFeatures.set(registrationType.method, feature);
     }
   }
 
@@ -533,19 +475,11 @@ export class LanguageClient {
     this.registerFeature(new SignatureHelpFeature(this));
     this.registerFeature(new RenameFeature(this));
     this.registerFeature(new PrepareRenameFeature(this));
-    this.registerFeature(new ConfigurationFeature(this));
-  }
-
-  private initializeFeatures() {
-    const documentSelector = this._clientOptions.documentSelector;
-    for (const feature of this._features) {
-      feature.initialize(this.capabilities, documentSelector);
-    }
   }
 
   private handleRegistrationRequest(params: RegistrationParams) {
     for (const registration of params.registrations) {
-      const feature = this._dynamicFeatures.get(registration.method);
+      const feature = this.dynamicFeatures.get(registration.method);
       if (!feature) {
         this.error(`No feature implementation for ${registration.method}`);
       }
@@ -575,11 +509,10 @@ export class LanguageClient {
         result.capabilities.positionEncoding !== PositionEncodingKind.UTF16
       ) {
         throw new Error(
-          `Unsupported position encoding (${result.capabilities.positionEncoding}) received from server ${this._name}`,
+          `Unsupported position encoding (${result.capabilities.positionEncoding}) received from server ${this.name}`,
         );
       }
 
-      this._initializeResult = result;
       this._state = ClientState.Running;
 
       // TODO what?
@@ -611,12 +544,10 @@ export class LanguageClient {
           .textDocumentSync as TextDocumentSyncOptions;
       }
 
-      // 记录当前 client 支持的 server capabilities
+      // 记录server capabilities
       this.capabilities = Object.assign({}, result.capabilities, {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
-      this.initializeFeatures();
-
       await connection.sendNotification(InitializedNotification.type, {});
 
       return result;
@@ -638,9 +569,7 @@ export class LanguageClient {
     try {
       await this.shutdown('stop', timeout);
     } finally {
-      if (this._serverProcess) {
-        this._serverProcess = undefined;
-      }
+      //
     }
   }
 
@@ -665,7 +594,7 @@ export class LanguageClient {
       }
     }
 
-    const connection = this._connection;
+    const connection = this.connection;
 
     // We can't stop a client that is not running (e.g. has no connection). Especially not
     // on that us starting since it can't be correctly synchronized.
@@ -675,7 +604,6 @@ export class LanguageClient {
       );
     }
 
-    this._initializeResult = undefined;
     this._state = ClientState.Stopping;
 
     const tp = new Promise<undefined>(c => {
@@ -710,7 +638,7 @@ export class LanguageClient {
         this._state = ClientState.Stopped;
         this._onStart = undefined;
         this._onStop = undefined;
-        this._connection = undefined;
+        this.connection = undefined;
       }));
   }
 
@@ -730,7 +658,7 @@ export class LanguageClient {
 
   public async on(method: string, params: any) {
     return (
-      this._dynamicFeatures.get(method) as RunnableDynamicFeature<
+      this.dynamicFeatures.get(method) as RunnableDynamicFeature<
         any,
         any,
         any,
@@ -768,7 +696,10 @@ export class LanguageClient {
 
   public checkCapabilityForMethod(method: string | MessageSignature) {
     const methodName = Is.toMethod(method);
-    const { capability } = methodRequirements[methodName];
-    return !capability || this.capabilities[capability];
+    const { capability, checkCommand } = methodRequirements[methodName];
+    return (
+      (capability && this.capabilities[capability]) ||
+      checkCommand?.(this.capabilities)
+    );
   }
 }

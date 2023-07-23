@@ -1,28 +1,19 @@
 import { URI } from 'vscode-uri';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { RPCServer } from 'ts-elrpc';
 import {
   eval_in_emacs,
   get_emacs_func_result,
   init_epc_server,
-  logger,
   message_emacs,
   send_response_to_emacs,
 } from './epc-utils';
 import { LanguageClient } from './client';
-import { toggleDebug } from './logger';
+import { toggleDebug, logger } from './logger';
 import { importLangServers } from './utils/importLangServers';
 import executable from './utils/executable';
 import languageIdMap from './constants/languageIdMap';
-
-interface InitParams {
-  language: string;
-  project: string;
-  command: string;
-  args: string[];
-  clientInfo: { name: string; version: string };
-}
+import { CompletionItem } from 'vscode-languageserver-protocol';
 
 export class LspRocks {
   private _server: RPCServer | null;
@@ -114,12 +105,31 @@ export class LspRocks {
       eval_in_emacs(
         'lsp-rocks--record-trigger-characters',
         filepath,
-        triggerCharacters,
+        triggerCharacters.reduce((prev, cur) => prev.concat(cur), []),
       );
     }
-    data = await Promise.race(
-      clients.map(client => client.on(req.cmd, req.params)),
-    );
+    // const temp = new Promise<void>((_, reject) => {
+    //   setTimeout(() => {
+    //     logger.debug(`${req.cmd} execeed time out 300ms`);
+    //     reject();
+    //   }, 1000);
+    // });
+    if (req.cmd === 'textDocument/completion') {
+      data = await this.doCompletion(clients, req);
+    } else {
+      data = await Promise.all(
+        clients.map(client => client.on(req.cmd, req.params)),
+      );
+      data = data.filter(item => !!item);
+      data = data[0];
+    }
+    // data = await Promise.race([
+    //   temp,
+    // ]);
+    logger.debug({
+      cmd: req.cmd,
+      data,
+    });
     // data = await client.on(req.cmd, req.params);
     if (this.recentRequests.get(req.cmd) != req.id) {
       return;
@@ -131,6 +141,19 @@ export class LspRocks {
     };
   }
 
+  async doCompletion(clients: LanguageClient[], req: RequestMessage) {
+    const resps = await Promise.allSettled<CompletionItem[]>(
+      clients.map(client => client.on(req.cmd, req.params)),
+    );
+    const fulfilledResps = resps.filter(
+      (resp): resp is PromiseFulfilledResult<CompletionItem[]> =>
+        resp.status === 'fulfilled',
+    );
+    return fulfilledResps.reduce((prev, cur) => {
+      return prev.concat(cur.value);
+    }, [] as CompletionItem[]);
+  }
+
   private async ensureClient(projectRoot: string, filePath: string) {
     // find all support current file's config
     // find workspace?
@@ -138,6 +161,10 @@ export class LspRocks {
     const languageId = languageIdMap[extension];
     if (!languageId) {
       throw new Error(`Not support current file type ${extension}.`);
+    }
+    let clients = this._clients.get(projectRoot);
+    if (clients) {
+      return clients;
     }
 
     const configs = this.findClients(filePath, projectRoot);
@@ -150,21 +177,10 @@ export class LspRocks {
         .map(item => item.name)
         .join('  ')}`,
     );
-    let clients = this._clients.get(projectRoot);
-    if (clients) {
-      return clients;
-    }
-    // const params = await get_emacs_func_result<InitParams>('lsp-rocks--init');
-    // if (!params) {
-    //   throw new Error(
-    //     'Can not create LanguageClient, because language and project is undefined',
-    //   );
-    // }
-    // const { language, project } = params;
     clients = (
       await Promise.all(
         configs.map(config =>
-          this.createClient(languageId, projectRoot, config),
+          this.createClient(config.name, projectRoot, config),
         ),
       )
     ).filter((client): client is LanguageClient => !!client);
@@ -186,24 +202,15 @@ export class LspRocks {
   }
 
   private async createClient(
-    language: string,
+    name: string,
     project: string,
     config: ServerConfig,
   ) {
-    // const configFile = `./langserver/${language}.js`;
-    // const configPath = path.join(__dirname, configFile);
-    // const config: ServerConfig = fs.existsSync(configPath)
-    //   ? require(configFile)
-    //   : undefined;
     const client = new LanguageClient(
-      language,
+      name,
       project,
-      {
-        command: config.command,
-        args: config.args,
-        options: { cwd: project },
-      },
       config,
+      this.filePathToProject,
     );
     await client.start();
 

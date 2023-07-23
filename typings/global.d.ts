@@ -1,4 +1,5 @@
 import {
+  ConfigurationItem,
   InitializeResult,
   type TextDocumentIdentifier,
 } from 'vscode-languageserver-protocol';
@@ -24,6 +25,10 @@ declare global {
     args: string[];
     supportExtensions: string[];
     settings: Record<string, unknown>; // default is a {}
+    configuration?: (
+      items: ConfigurationItem[],
+      filePathToProject: Map<string, string>,
+    ) => Array<object | null>;
     initializeOptions?: () => Record<string, unknown>; // default return settings
     activate: (filepath: string, workspaceRoot: string) => boolean; // default return false
     initializedFn?: (result: InitializeResult) => InitializeResult;

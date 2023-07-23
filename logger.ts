@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pino } from 'pino';
+import { pino, Logger } from 'pino';
 
 export let IS_DEBUG = false;
 
@@ -32,3 +32,30 @@ export const createLogger = (clientName: string) => {
 
   return logger;
 };
+
+const debugLogFile = join(tmpdir(), `lsp-rocks:${process.pid}.log`);
+
+const transport = pino.transport({
+  targets: [
+    {
+      level: 'debug',
+      target: 'pino-pretty',
+      options: {
+        destination: debugLogFile,
+      },
+    },
+  ],
+});
+
+let logger: Logger;
+const initLogger = () => {
+  if (logger) {
+    return logger;
+  }
+  logger = pino(transport);
+  logger.level = 'debug';
+  return logger;
+};
+
+initLogger();
+export { logger };

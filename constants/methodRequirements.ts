@@ -2,7 +2,7 @@ import { type ServerCapabilities } from 'vscode-languageserver-protocol';
 
 interface Capability {
   capability?: keyof ServerCapabilities;
-  checkCommand?: (...args: any[]) => void;
+  checkCommand?: (capability: ServerCapabilities) => void;
 }
 
 const methodRequirements: Record<string, Capability> = {
@@ -24,8 +24,9 @@ const methodRequirements: Record<string, Capability> = {
     capability: 'completionProvider',
   },
   'completionItem/resolve': {
-    checkCommand: () => {
+    checkCommand: (capability: ServerCapabilities) => {
       // Implementation here
+      return capability.completionProvider?.resolveProvider;
     },
   },
   'textDocument/declaration': {
