@@ -37,6 +37,7 @@ import {
   MarkupKind,
   InsertTextMode,
   ConfigurationRequest,
+  PublishDiagnosticsNotification,
 } from 'vscode-languageserver-protocol';
 import { MessageSignature, RAL, ResponseError } from 'vscode-jsonrpc/node';
 import { Logger } from 'pino';
@@ -66,6 +67,8 @@ import Connection from './connection';
 import data2String from './utils/data2String';
 import * as Is from './util';
 import methodRequirements from './constants/methodRequirements';
+import { filePathToProject } from './project';
+import diagnosticCenter from './diagnostics';
 
 enum ClientState {
   Initial = 'initial',
@@ -82,7 +85,7 @@ export class LanguageClient {
   readonly logger: Logger;
   capabilities: ServerCapabilities;
   serverConfig: ServerConfig | undefined;
-  filePathToProject: Map<string, string> = new Map();
+  // filePathToProject: Map<string, string> = new Map();
   private features: DynamicFeature<any>[];
   // 记录 client/registerCapability 返回注册的能力
   private registeredCapabilities = new Map<
@@ -101,12 +104,12 @@ export class LanguageClient {
     name: string,
     projectRoot: string,
     serverConfig: ServerConfig,
-    filePathToProject: Map<string, string>,
+    // filePathToProject: Map<string, string>,
   ) {
     this.name = name;
     this.projectRoot = projectRoot;
     this.serverConfig = serverConfig;
-    this.filePathToProject = filePathToProject;
+    // this.filePathToProject = filePathToProject;
     this.features = [];
     this.dynamicFeatures = new Map();
     this.logger = createLogger(this.name);
@@ -313,14 +316,15 @@ export class LanguageClient {
       connection.onRequest(ConfigurationRequest.type, params => {
         const { serverConfig } = this;
         return serverConfig?.configuration
-          ? serverConfig.configuration(params.items, this.filePathToProject)
+          ? serverConfig.configuration(params.items, filePathToProject)
           : [serverConfig?.initializeOptions];
       });
 
-      connection.onNotification('textDocument/publishDiagnostics', params => {
+      connection.onNotification(PublishDiagnosticsNotification.type, params => {
         logger.info({
           data: params,
         });
+        diagnosticCenter.setDiagnosticsByProjectRoot(this.projectRoot, this.name, params);
       });
 
       await this.initialize(connection);

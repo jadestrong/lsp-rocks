@@ -9,28 +9,34 @@ import {
   send_response_to_emacs,
 } from './epc-utils';
 import { LanguageClient } from './client';
-import { toggleDebug, logger } from './logger';
+import { toggleDebug, logger, IS_DEBUG } from './logger';
 import { importLangServers } from './utils/importLangServers';
 import executable from './utils/executable';
 import languageIdMap from './constants/languageIdMap';
 import { CompletionItem } from 'vscode-languageserver-protocol';
+import { filePathToProject } from './project';
+import diagnosticCenter from './diagnostics';
+// import DiagnosticCenter from './diagnostics';
 
 export class LspRocks {
   private _server: RPCServer | null;
 
-  readonly filePathToProject: Map<string, string> = new Map();
+  // readonly filePathToProject: Map<string, string> = new Map();
   readonly _clients: Map<string, LanguageClient[] | undefined>;
 
   readonly recentRequests: Map<string, any>;
   configs: ServerConfig[] = [];
+  // diagnosticCenter: DiagnosticCenter
 
   constructor() {
     this._clients = new Map();
     this.recentRequests = new Map();
+    // this.diagnosticCenter = new DiagnosticCenter(this.filePathToProject);
   }
 
   public async start() {
     this._server = await init_epc_server();
+    this._server?.logger && (this._server.logger.level = IS_DEBUG ? 'debug' : 'info');
     this._server?.defineMethod('message', async (message: RequestMessage) => {
       this.recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
@@ -59,6 +65,21 @@ export class LspRocks {
       return this._server?.logfile ?? '';
     });
 
+    this._server?.defineMethod('pullDiagnostics', (filePath: string) => {
+      logger.info({
+        cmd: 'pullDiagnostics',
+        filePath,
+      })
+      const diagnostics = diagnosticCenter.getDiagnosticsByFilePath(filePath);
+
+      logger.debug({
+        cmd: 'pullDiagnostics',
+        filePath,
+        diagnostics,
+      })
+      return diagnostics;
+    })
+
     this.configs = await importLangServers();
     message_emacs('config length ' + this.configs.length);
   }
@@ -77,13 +98,13 @@ export class LspRocks {
     const {
       textDocument: { uri },
     } = params;
-    let projectRoot = this.filePathToProject.get(uri);
+    let projectRoot = filePathToProject.get(uri);
 
     if (!projectRoot) {
       projectRoot = await get_emacs_func_result<string>(
         'lsp-rocks--suggest-project-root',
       );
-      this.filePathToProject.set(uri, projectRoot);
+      filePathToProject.set(uri, projectRoot);
     }
 
     const clients = await this.ensureClient(projectRoot, filepath);
@@ -210,7 +231,7 @@ export class LspRocks {
       name,
       project,
       config,
-      this.filePathToProject,
+      // this.filePathToProject,
     );
     await client.start();
 

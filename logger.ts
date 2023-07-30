@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pino, Logger } from 'pino';
 
-export let IS_DEBUG = false;
+export let IS_DEBUG = true;
 
 export const toggleDebug = () => {
   IS_DEBUG = !IS_DEBUG;

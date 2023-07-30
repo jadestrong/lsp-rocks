@@ -2,7 +2,7 @@ import { basename, dirname } from 'path';
 import { URI } from 'vscode-uri';
 
 const eslint: ServerConfig = {
-  name: 'esint',
+  name: 'eslint',
   args: ['--stdio'],
   settings: {},
   configuration(items, filePathToProject) {

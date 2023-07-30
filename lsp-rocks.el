@@ -39,6 +39,7 @@
 (defvar lsp-rocks-mode) ;; properly defined by define-minor-mode below
 (declare-function projectile-project-root "ext:projectile")
 (declare-function yas-expand-snippet "ext:yasnippet")
+(declare-function flycheck-buffer "ext:flycheck")
 
 (defvar yas-inhibit-overlay-modification-protection)
 (defvar yas-indent-line)
@@ -51,8 +52,8 @@
 (defvar lsp-rocks-is-started nil
   "Is the Server is started.")
 
-(defvar lsp-rocks-started-hook nil
-  "Hook for server started.")
+;; (defvar lsp-rocks-started-hook nil
+;;   "Hook for server started.")
 
 (defvar lsp-rocks-node-file (expand-file-name "cli.ts" (if load-file-name
                                                            (file-name-directory load-file-name)
@@ -267,6 +268,12 @@ Setting this to nil or 0 will turn off the indicator."
 
 (defvar lsp-rocks--company-callback nil
   "Company callback.")
+
+(defvar-local lsp-rocks-diagnostics--flycheck-enabled nil
+  "True when lsp-rocks diagnostics flycheck integration has been enabled in this buffer.")
+
+(defvar-local lsp-rocks-diagnostics--flycheck-checker nil
+  "The value of flycheck-checker before lsp-rocks diagnostics was activated.")
 
 (defvar lsp-rocks-language-server-configuration
   (list (list 'rust-mode (list :name "rust" :command "rust-analyzer" :args (vector)))
@@ -1150,21 +1157,23 @@ Doubles as an indicator of snippet support."
   :group 'lsp-rocks)
 
 (defun lsp-rocks--idle-reschedule (buffer)
+  "LSP rocks idle schedule on current BUFFER."
   (when lsp-rocks--on-idle-timer
     (cancel-timer lsp-rocks--on-idle-timer))
   (setq lsp-rocks--on-idle-timer (run-with-idle-timer
-                                   lsp-rocks-idle-delay
-                                   nil
-                                   #'lsp-rocks--on-idle
-                                   buffer)))
+                                  lsp-rocks-idle-delay
+                                  nil
+                                  #'lsp-rocks--on-idle
+                                  buffer)))
 (defun lsp-rocks--on-idle (buffer)
-  "Start post command loop."
+  "Start post command loop on current BUFFER."
   (when (and (buffer-live-p buffer)
-          (equal buffer (current-buffer))
-          lsp-rocks-mode)
+             (equal buffer (current-buffer))
+             lsp-rocks-mode)
     (run-hooks 'lsp-rocks-on-idle-hook)))
 
 (defun lsp-rocks--post-command-hook ()
+  "Post command hook."
   (lsp-rocks--idle-reschedule (current-buffer))
   (let ((this-command-string (format "%s" this-command)))
 
@@ -1194,17 +1203,85 @@ Doubles as an indicator of snippet support."
   "Register internal hooks."
   (message "run register internal hooks")
   (dolist (hook lsp-rocks--internal-hooks)
-    (add-hook (car hook) (cdr hook) nil t)))
+    (add-hook (car hook) (cdr hook) nil t))
+  (lsp-rocks-diagnostics-flycheck-enable))
 
 (defun lsp-rocks-diagnostics--flycheck-start (checker callback)
   "Start an LSP syntax check with CHECKER.
 CALLBACK is the status callback passed by Flycheck."
+  (message "start???")
+  (deferred:$
+    (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
+    (deferred:nextc it
+      (lambda (diagnostics)
+        (if diagnostics
+          (progn
+            (let ((errors (mapcar
+                            (lambda (diagnostic)
+                              (let* ((range (plist-get diagnostic :range))
+                                      (start (plist-get range :start))
+                                      (end (plist-get range :end)))
+                                (flycheck-error-new
+                                  :buffer (current-buffer)
+                                  :checker checker
+                                  :filename (buffer-file-name)
+                                  :message (plist-get diagnostic :message)
+                                  :level (pcase (plist-get diagnostic :severity)
+                                           (1 'error)
+                                           (2 'warning)
+                                           (3 'info)
+                                           (4 'info)
+                                           (_ 'error))
+                                  :id (plist-get diagnostic :code)
+                                  :group (plist-get diagnostic :source)
+                                  :line (1+ (plist-get start :line))
+                                  :column (1+ (plist-get start :character))
+                                  :end-line (1+ (plist-get end :line))
+                                  :end-column (1+ (plist-get end :character)))))
+                            diagnostics)))
+              (funcall callback 'finished errors)))
+          (funcall callback 'finished '())))))
+  ;; (if-let ((diagnostics (lsp-rocks-call-sync "pullDiagnostics" (buffer-file-name))))
+  ;;     (progn
+  ;;       (let ((errors (mapcar
+  ;;                      (lambda (diagnostic)
+  ;;                        (let* ((range (plist-get diagnostic :range))
+  ;;                               (start (plist-get range :start))
+  ;;                               (end (plist-get range :end)))
+  ;;                          (flycheck-error-new
+  ;;                           :buffer (current-buffer)
+  ;;                           :checker checker
+  ;;                           :filename (buffer-file-name)
+  ;;                           :message (plist-get diagnostic :message)
+  ;;                           :level (pcase (plist-get diagnostic :severity)
+  ;;                                    (1 'error)
+  ;;                                    (2 'warning)
+  ;;                                    (3 'info)
+  ;;                                    (4 'info)
+  ;;                                    (_ 'error))
+  ;;                           :id (plist-get diagnostic :code)
+  ;;                           :group (plist-get diagnostic :source)
+  ;;                           :line (1+ (plist-get start :line))
+  ;;                           :column (1+ (plist-get start :character))
+  ;;                           :end-line (1+ (plist-get end :line))
+  ;;                           :end-column (1+ (plist-get end :character)))))
+  ;;                      diagnostics)))
+  ;;         (funcall callback 'finished errors)))
+  ;;   (funcall callback 'finished '()))
   )
 
-(defun lsp-rocks-diagnostics--flycheck-report
+(defun lsp-rocks--diagnostics-flycheck-report ()
   "Report flycheck.
-This callback is invoked when new diagnostics are received
-from the language server.")
+This is invoked by lsp-rocks."
+  (with-current-buffer (current-buffer)
+    (add-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer)
+    (lsp-rocks--idle-reschedule (current-buffer))))
+
+(defun lsp-rocks-diagnostics--flycheck-buffer ()
+  "Trigger flycheck on buffer."
+  (remove-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-start t)
+  (when (bound-and-true-p flycheck-mode)
+    (flycheck-buffer)))
 
 (flycheck-define-generic-checker 'lsp-rocks
   "A syntax checker using the langauge server protocol provided by lsp-rocks."
@@ -1212,19 +1289,51 @@ from the language server.")
   :modes '(lsp-rocks-placeholder-mode)
   :predicate (lambda () lsp-rocks-mode))
 
+(defun lsp-rocks-diagnostics-flycheck-enable (&rest _)
+  "Enable flycheck integration for the current buffer."
+  ;; (and (not lsp-rocks-diagnostics--flycheck-enabled)
+  ;;      (not (eq flycheck-checker 'lsp-rocks))
+  ;;      (setq lsp-rocks-diagnostics--flycheck-checker flycheck-checker))
+  (unless lsp-rocks-diagnostics--flycheck-enabled
+    (setq-local lsp-rocks-diagnostics--flycheck-enabled t)
+    (add-to-list 'flycheck-checkers 'lsp-rocks)
+    (unless (flycheck-checker-supports-major-mode-p 'lsp-rocks major-mode)
+      (flycheck-add-mode 'lsp-rocks major-mode)))
+  ;; (flycheck-mode 1)
+  ;; (flycheck-stop)
+  ;; (setq-local flycheck-checker 'lsp-rocks)
+  ;; (make-local-variable 'flycheck-checkers)
+  ;; (flycheck-add-next-checker lsp-rocks-diagnostics--flycheck-checker 'lsp-rocks)
+  )
+
+(defun lsp-rocks-diagnostics-flycheck-disable (&rest _)
+  "Disable flycheck integartion for the current buffer."
+  (when lsp-rocks-diagnostics--flycheck-enabled
+    ;; (flycheck-stop)
+    ;; (when (eq flycheck-checker 'lsp-rocks)
+    ;;   (setq-local flychecker-checker lsp-rocks-diagnostics--flycheck-checker))
+    ;; (setq lsp-rocks-diagnostics--flycheck-checker nil)
+    (setq-local lsp-rocks-diagnostics--flycheck-enabled nil)
+    ;; (when flycheck-mode
+    ;;   (flycheck-mode 1))
+    ))
+
 (defun lsp-rocks--enable ()
   (when buffer-file-name
     (if (epc:live-p lsp-rocks-process)
         (progn
           (setq-local lsp-rocks--completion-trigger-characters nil)
           (lsp-rocks-register-internal-hooks)
-          (lsp-rocks--did-open))
-      (lsp-rocks-start-process))))
+          (lsp-rocks--did-open)
+          )
+      (lsp-rocks-start-process))
+    ))
 
 (defun lsp-rocks--disable ()
   (dolist (hook lsp-rocks--internal-hooks)
     (remove-hook (car hook) (cdr hook) t))
-  (remove-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks))
+  ;; (remove-hook 'lsp-rocks-started-hook 'lsp-rocks-register-internal-hooks)
+  (lsp-rocks-diagnostics-flycheck-disable))
 
 (defvar lsp-rocks-mode-map (make-sparse-keymap))
 
