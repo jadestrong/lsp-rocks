@@ -16,6 +16,7 @@ import {
 import { Logger } from 'pino';
 import { message_emacs } from './epc-utils';
 import * as Is from './util';
+import { logger as commonLogger } from './logger';
 
 export enum TransportKind {
   stdio,
@@ -94,9 +95,16 @@ class Connection {
     );
     connection.onError(err => {
       message_emacs(`connection onError: ${err[1]}`);
+      commonLogger.error({
+        msg: `${serverOptions.command} Connection error `,
+        data: err,
+      })
     });
     connection.onClose(() => {
       message_emacs('closeHandler');
+      commonLogger.error({
+        msg: `${serverOptions.command} closeHandler`,
+      })
     });
 
     connection.trace(Trace.Verbose, {

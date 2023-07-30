@@ -22,6 +22,7 @@ declare global {
   interface ServerConfig {
     name: string;
     command: string;
+    multiRoot?: boolean;
     args: string[];
     supportExtensions: string[];
     settings: Record<string, unknown>; // default is a {}

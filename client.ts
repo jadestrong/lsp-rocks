@@ -373,7 +373,7 @@ export class LanguageClient {
             },
           },
           executeCommand: { dynamicRegistration: false },
-          // didChangeWatchedFiles: { dynamicRegistration: true },
+          // didChangeWatchedFiles: { dynamicRegistration: true }, // TODO not support yet
           // workspaceFolders: true,
         },
         textDocument: {

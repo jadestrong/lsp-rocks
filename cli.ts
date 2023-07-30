@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { logger, message_emacs } from './epc-utils';
+import { message_emacs } from './epc-utils';
+import { logger } from './logger';
 import { LspRocks } from './lsp-rocks';
 
 new LspRocks().start();
@@ -8,7 +9,10 @@ new LspRocks().start();
 process.on('uncaughtException', err => {
   console.log('uncaughtException', err);
   message_emacs('uncaughtException ' + err.message);
-  logger.info('uncaughtException', err);
+  logger.error({
+    msg: 'uncaughtException',
+    data: err,
+  });
 });
 
 process.on('unhandledRejection', (reason, p) => {
@@ -22,5 +26,9 @@ process.on('unhandledRejection', (reason, p) => {
       (reason as Error).stack +
       JSON.stringify(p),
   );
-  // logger.info('unhandledRejection err', reason, p)
+  logger.error({
+    msg: 'unhandledRejection',
+    reason,
+    p
+  })
 });
