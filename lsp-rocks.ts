@@ -137,6 +137,18 @@ export class LspRocks {
     // });
     if (req.cmd === 'textDocument/completion') {
       data = await this.doCompletion(clients, req);
+    } else if (req.cmd === 'textDocument/formatting') {
+      // 如果是 formating ，则需要找到其中一个支持该能力的 server 发送请求即可
+      const [client] = clients.filter(item => item.checkCapabilityForMethod(req.cmd));
+      logger.debug({
+        msg: 'Did find a client?',
+        name: client?.name,
+      })
+      if (client) {
+        data = await client.on(req.cmd, req.params);
+      } else {
+        data = []
+      }
     } else {
       data = await Promise.all(
         clients.map(client => client.on(req.cmd, req.params)),
@@ -231,7 +243,6 @@ export class LspRocks {
       name,
       project,
       config,
-      // this.filePathToProject,
     );
     await client.start();
 

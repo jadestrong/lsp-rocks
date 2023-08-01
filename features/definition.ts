@@ -8,10 +8,7 @@ import {
 } from 'vscode-languageserver-protocol';
 import { fileURLToPath } from 'node:url';
 import { LanguageClient } from '../client';
-import methodRequirements from '../constants/methodRequirements';
-import { toMethod } from '../util';
 import { RunnableDynamicFeature } from './features';
-import { message_emacs } from '../epc-utils';
 
 export class DefinitionFeature extends RunnableDynamicFeature<
   DefinitionParams,

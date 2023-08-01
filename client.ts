@@ -69,6 +69,7 @@ import * as Is from './util';
 import methodRequirements from './constants/methodRequirements';
 import { filePathToProject } from './project';
 import diagnosticCenter from './diagnostics';
+import { DocumentFormatingFeature } from './features/format';
 
 enum ClientState {
   Initial = 'initial',
@@ -479,6 +480,7 @@ export class LanguageClient {
     this.registerFeature(new SignatureHelpFeature(this));
     this.registerFeature(new RenameFeature(this));
     this.registerFeature(new PrepareRenameFeature(this));
+    this.registerFeature(new DocumentFormatingFeature(this));
   }
 
   private handleRegistrationRequest(params: RegistrationParams) {
@@ -491,7 +493,7 @@ export class LanguageClient {
         `register ${registration.method}`,
         JSON.stringify(registration),
       );
-      // TODO 只需要处理 workspace/didChangeWatchedFiles
+      // 需要单独处理 workspace/didChangeWatchedFiles,并将其他的注册能力记录，用于检测该 client 是否支持
       this.registeredCapabilities.set(registration.method, registration);
     }
   }
@@ -703,7 +705,8 @@ export class LanguageClient {
     const { capability, checkCommand } = methodRequirements[methodName];
     return (
       (capability && this.capabilities[capability]) ||
-      checkCommand?.(this.capabilities)
+      checkCommand?.(this.capabilities) ||
+      this.registeredCapabilities.get(methodName)
     );
   }
 }

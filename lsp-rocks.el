@@ -407,6 +407,7 @@ Setting this to nil or 0 will turn off the indicator."
         ("textDocument/signatureHelp" (lsp-rocks--process-signature-help data))
         ("textDocument/prepareRename" (lsp-rocks--process-prepare-rename data))
         ("textDocument/rename" (lsp-rocks--process-rename data))
+        ("textDocument/formatting" (lsp-rocks--process-formatting data))
         ))))
 
 (defun lsp-rocks--expand-snippet (snippet &optional start end expand-env)
@@ -435,11 +436,11 @@ LSP server result."
 
 (defun lsp-rocks--apply-text-edit (edit)
   "Apply the edits ddescribed in the TextEdit objet in TEXT-EDIT."
-  (let* ((start (plist-get (plist-get edit :range) :start))
-         (end (plist-get (plist-get edit :range) :end))
-         (new-text (plist-get edit :new-text)))
+  (let* ((start (lsp-rocks--position-point (plist-get (plist-get edit :range) :start)))
+         (end (lsp-rocks--position-point (plist-get (plist-get edit :range) :end)))
+         (new-text (plist-get edit :newText)))
     (setq new-text (s-replace "\r" "" (or new-text "")))
-    (plist-put edit :new-text new-text)
+    (plist-put edit :newText new-text)
     (goto-char start)
     (delete-region start end)
     (insert new-text)))
@@ -459,8 +460,8 @@ LSP server result."
               (progress-reporter-update reporter (cl-incf done))
               (lsp-rocks--apply-text-edit edit)
               (when-let* ((insert-text-format (plist-get edit :insert-text-format))
-                          (start (plist-get (plist-get edit :range) :start))
-                          (new-text (plist-get edit :new-text)))
+                          (start (lsp-rocks--position-point (plist-get (plist-get edit :range) :start)))
+                          (new-text (plist-get edit :newText)))
                 (when (eq insert-text-format 2)
                   (goto-char (+ start (length new-text)))
                   (lsp-rocks--expand-snippet new-text start (point)))))
@@ -660,6 +661,104 @@ File paths with spaces are only supported inside strings."
 (defun lsp-rocks--prepare-rename ()
   "Rename symbols."
   (lsp-rocks--request "textDocument/prepareRename" (lsp-rocks--TextDocumentPosition)))
+
+(defcustom lsp-rocks-trim-trailing-whitespace t
+  "Trim trailing whitespace on a line."
+  :group 'lsp-rocks
+  :type 'boolean)
+
+(defcustom lsp-rocks-insert-final-newline t
+  "Insert a newline character at the end of the file if one does not exist."
+  :group 'lsp-rocks
+  :type 'boolean)
+
+(defcustom lsp-rocks-trim-final-newlines t
+  "Trim all newlines after the final newline at the end of the file."
+  :group 'lsp-rocks
+  :type 'boolean)
+
+(defvar lsp-rocks--formatting-indent-alist
+  ;; Taken from `dtrt-indent-mode'
+  '(
+    (ada-mode                   . ada-indent)                       ; Ada
+    (c++-mode                   . c-basic-offset)                   ; C++
+    (c++-ts-mode                . c-ts-mode-indent-offset)
+    (c-mode                     . c-basic-offset)                   ; C
+    (c-ts-mode                  . c-ts-mode-indent-offset)
+    (cperl-mode                 . cperl-indent-level)               ; Perl
+    (crystal-mode               . crystal-indent-level)             ; Crystal (Ruby)
+    (csharp-mode                . c-basic-offset)                   ; C#
+    (csharp-tree-sitter-mode    . csharp-tree-sitter-indent-offset) ; C#
+    (csharp-ts-mode             . csharp-ts-mode-indent-offset)     ; C# (tree-sitter, Emacs29)
+    (css-mode                   . css-indent-offset)                ; CSS
+    (d-mode                     . c-basic-offset)                   ; D
+    (enh-ruby-mode              . enh-ruby-indent-level)            ; Ruby
+    (erlang-mode                . erlang-indent-level)              ; Erlang
+    (ess-mode                   . ess-indent-offset)                ; ESS (R)
+    (go-ts-mode                 . go-ts-mode-indent-offset)
+    (hack-mode                  . hack-indent-offset)               ; Hack
+    (java-mode                  . c-basic-offset)                   ; Java
+    (java-ts-mode               . java-ts-mode-indent-offset)
+    (jde-mode                   . c-basic-offset)                   ; Java (JDE)
+    (js-mode                    . js-indent-level)                  ; JavaScript
+    (js2-mode                   . js2-basic-offset)                 ; JavaScript-IDE
+    (js3-mode                   . js3-indent-level)                 ; JavaScript-IDE
+    (json-mode                  . js-indent-level)                  ; JSON
+    (json-ts-mode               . json-ts-mode-indent-offset)
+    (lua-mode                   . lua-indent-level)                 ; Lua
+    (nxml-mode                  . nxml-child-indent)                ; XML
+    (objc-mode                  . c-basic-offset)                   ; Objective C
+    (pascal-mode                . pascal-indent-level)              ; Pascal
+    (perl-mode                  . perl-indent-level)                ; Perl
+    (php-mode                   . c-basic-offset)                   ; PHP
+    (powershell-mode            . powershell-indent)                ; PowerShell
+    (raku-mode                  . raku-indent-offset)               ; Perl6/Raku
+    (ruby-mode                  . ruby-indent-level)                ; Ruby
+    (rust-mode                  . rust-indent-offset)               ; Rust
+    (rust-ts-mode               . rust-ts-mode-indent-offset)
+    (rustic-mode                . rustic-indent-offset)             ; Rust
+    (scala-mode                 . scala-indent:step)                ; Scala
+    (sgml-mode                  . sgml-basic-offset)                ; SGML
+    (sh-mode                    . sh-basic-offset)                  ; Shell Script
+    (toml-ts-mode               . toml-ts-mode-indent-offset)
+    (typescript-mode            . typescript-indent-level)          ; Typescript
+    (typescript-ts-mode         . typescript-ts-mode-indent-offset) ; Typescript (tree-sitter, Emacs29)
+    (yaml-mode                  . yaml-indent-offset)               ; YAML
+
+    (default                    . standard-indent))                 ; default fallback
+  "A mapping from `major-mode' to its indent variable.")
+
+(defun lsp-rocks--get-indent-width (mode)
+  "Get indentation offset for MODE."
+  (or (alist-get mode lsp-rocks--formatting-indent-alist)
+      (lsp-rocks--get-indent-width (or (get mode 'derived-mode-parent) 'default))))
+
+(defun lsp-rocks-format-buffer ()
+  "Ask the server to format this document."
+  (interactive)
+  ;; (deferred:$
+  (lsp-rocks--request "textDocument/formatting"
+                      (append (list
+                               :options
+                               (list
+                                :tab-size (symbol-value (lsp-rocks--get-indent-width major-mode))
+                                :insert-spaces (not indent-tabs-mode)
+                                :trim-trailing-whitespace lsp-rocks-trim-trailing-whitespace
+                                :insert-final-newline lsp-rocks-insert-final-newline
+                                :trim-final-newlinesmm lsp-rocks-trim-final-newlines))
+                              (lsp-rocks--TextDocumentIdentifier)))
+  ;; (deferred:nextc it
+  ;;                 (lambda (text-edits)
+  ;;                   (message "textEdits %s" text-edits)))
+  ;; )
+  )
+
+(defun lsp-rocks--process-formatting (edits)
+  "Invoke by LSP Rocks to format the buffer of DATA."
+  (message "here %s" edits)
+  (if (and edits (> (length edits) 0))
+      (lsp-rocks--apply-text-edits edits)
+    (error "[LSP ROCKS] No formatting changes provided %s" edits)))
 
 ;;;;;;;; sync request
 (defun lsp-rocks--doc-buffer (item)
@@ -1211,36 +1310,36 @@ Doubles as an indicator of snippet support."
 CALLBACK is the status callback passed by Flycheck."
   (message "start???")
   (deferred:$
-    (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
-    (deferred:nextc it
-      (lambda (diagnostics)
-        (if diagnostics
-          (progn
-            (let ((errors (mapcar
-                            (lambda (diagnostic)
-                              (let* ((range (plist-get diagnostic :range))
-                                      (start (plist-get range :start))
-                                      (end (plist-get range :end)))
-                                (flycheck-error-new
-                                  :buffer (current-buffer)
-                                  :checker checker
-                                  :filename (buffer-file-name)
-                                  :message (plist-get diagnostic :message)
-                                  :level (pcase (plist-get diagnostic :severity)
-                                           (1 'error)
-                                           (2 'warning)
-                                           (3 'info)
-                                           (4 'info)
-                                           (_ 'error))
-                                  :id (plist-get diagnostic :code)
-                                  :group (plist-get diagnostic :source)
-                                  :line (1+ (plist-get start :line))
-                                  :column (1+ (plist-get start :character))
-                                  :end-line (1+ (plist-get end :line))
-                                  :end-column (1+ (plist-get end :character)))))
-                            diagnostics)))
-              (funcall callback 'finished errors)))
-          (funcall callback 'finished '())))))
+   (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
+   (deferred:nextc it
+                   (lambda (diagnostics)
+                     (if diagnostics
+                         (progn
+                           (let ((errors (mapcar
+                                          (lambda (diagnostic)
+                                            (let* ((range (plist-get diagnostic :range))
+                                                   (start (plist-get range :start))
+                                                   (end (plist-get range :end)))
+                                              (flycheck-error-new
+                                               :buffer (current-buffer)
+                                               :checker checker
+                                               :filename (buffer-file-name)
+                                               :message (plist-get diagnostic :message)
+                                               :level (pcase (plist-get diagnostic :severity)
+                                                        (1 'error)
+                                                        (2 'warning)
+                                                        (3 'info)
+                                                        (4 'info)
+                                                        (_ 'error))
+                                               :id (plist-get diagnostic :code)
+                                               :group (plist-get diagnostic :source)
+                                               :line (1+ (plist-get start :line))
+                                               :column (1+ (plist-get start :character))
+                                               :end-line (1+ (plist-get end :line))
+                                               :end-column (1+ (plist-get end :character)))))
+                                          diagnostics)))
+                             (funcall callback 'finished errors)))
+                       (funcall callback 'finished '())))))
   ;; (if-let ((diagnostics (lsp-rocks-call-sync "pullDiagnostics" (buffer-file-name))))
   ;;     (progn
   ;;       (let ((errors (mapcar
