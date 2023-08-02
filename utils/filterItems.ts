@@ -1,4 +1,4 @@
-import { InsertReplaceEdit, type CompletionItem } from "vscode-languageserver-protocol";
+import { InsertReplaceEdit, type CompletionItem, TextEdit } from "vscode-languageserver-protocol";
 import { byteSlice } from "./string";
 
 interface ExtendCompletionItem {
@@ -82,7 +82,15 @@ function filterItems(pretext: string, items: CompletionItem[]) {
     return 0
   })
 
-  return arr.map(item => item.originItem)
+  return arr.map(({ originItem }) => {
+    if (originItem.textEdit && InsertReplaceEdit.is(originItem.textEdit)) {
+      return {
+        ...originItem,
+        textEdit: TextEdit.replace(originItem.textEdit.replace, originItem.textEdit.newText),
+      }
+    }
+    return originItem;
+  })
 }
 
 function getCharCodes(str: string) {

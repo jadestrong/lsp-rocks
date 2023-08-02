@@ -5,7 +5,9 @@ import {
   CompletionRequest,
   CompletionResolveRequest,
   CompletionTriggerKind,
+  InsertReplaceEdit,
   RegistrationType,
+  TextEdit,
 } from 'vscode-languageserver-protocol';
 import { LanguageClient } from '../client';
 import { byteSlice } from '../utils/string';
@@ -105,7 +107,15 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
     ) {
       return null;
     }
-    return this.client.sendRequest(CompletionResolveRequest.type, params);
+    const resp = await this.client.sendRequest(CompletionResolveRequest.type, params);
+    if (resp && resp.textEdit && InsertReplaceEdit.is(resp.textEdit)) {
+      return {
+        ...resp,
+        textEdit: TextEdit.replace(resp.textEdit.replace, resp.textEdit.newText),
+      }
+    }
+    return resp;
+
   }
 
   public get registrationType() {

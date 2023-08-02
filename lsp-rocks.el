@@ -410,6 +410,11 @@ Setting this to nil or 0 will turn off the indicator."
         ("textDocument/formatting" (lsp-rocks--process-formatting data))
         ))))
 
+
+(defvar-local lsp-rocks-enable-relative-indentation nil
+  "Enable relative indentation when insert texts, snippets ...
+from language server.")
+
 (defun lsp-rocks--expand-snippet (snippet &optional start end expand-env)
   "Wrapper of `yas-expand-snippet' with all of it arguments.
 The snippet will be convert to LSP style and indent according to
@@ -420,6 +425,39 @@ LSP server result."
          (yas-indent-line 'none)
          (yas-also-auto-indent-first-line nil))
     (yas-expand-snippet snippet start end expand-env)))
+
+(defun lsp-rocks--indent-lines (start end &optional insert-text-mode?)
+  "Indent from START to END based on INSERT-TEXT-MODE? value.
+- When INSERT-TEXT-MODE? is provided
+  - if it's `lsp/insert-text-mode-as-it', do no editor indentation.
+  - if it's `lsp/insert-text-mode-adjust-indentation', adjust leading
+    whitespaces to match the line where text is inserted.
+- When it's not provided, using `indent-line-function' for each line."
+  (save-excursion
+    (goto-char end)
+    (let* ((end-line (line-number-at-pos))
+           (offset (save-excursion
+                     (goto-char start)
+                     (current-indentation)))
+           (indent-line-function
+            (cond ((eql insert-text-mode? 1)
+                   #'ignore)
+                  ((or (equal insert-text-mode? 2)
+                       lsp-rocks-enable-relative-indentation
+                       ;; Indenting snippets is extremely slow in `org-mode' buffers
+                       ;; since it has to calculate indentation based on SRC block
+                       ;; position.  Thus we use relative indentation as default.
+                       (derived-mode-p 'org-mode))
+                   (lambda () (save-excursion
+                                (beginning-of-line)
+                                (indent-to-column offset))))
+                  (t indent-line-function))))
+      (goto-char start)
+      (forward-line)
+      (while (and (not (eobp))
+                  (<= (line-number-at-pos) end-line))
+        (funcall indent-line-function)
+        (forward-line)))))
 
 (defun lsp-rocks--sort-edits (edits)
   (sort edits #'(lambda (edit-a edit-b)
@@ -445,6 +483,45 @@ LSP server result."
     (delete-region start end)
     (insert new-text)))
 
+(defun lsp-rocks--apply-text-edit-replace-buffer-contents (edit)
+  "Apply the edits described in the TextEdit object in TEXT-EDIT.
+The method uses `replace-buffer-contents'."
+  (let* (
+          (source (current-buffer))
+          (new-text (plist-get edit :newText))
+          (region (lsp-rocks--range-region (plist-get edit :range)))
+          (beg (car region))
+          (end (cdr region))
+          ;; ((beg . end) (lsp--range-to-region (lsp-make-range :start (lsp--fix-point start)
+          ;;                                      :end (lsp--fix-point end))))
+          )
+    (setq new-text (s-replace "\r" "" (or new-text "")))
+    (plist-put edit :newText new-text)
+    (with-temp-buffer
+      (insert new-text)
+      (let ((temp (current-buffer)))
+        (with-current-buffer source
+          (save-excursion
+            (save-restriction
+              (narrow-to-region beg end)
+
+              ;; On emacs versions < 26.2,
+              ;; `replace-buffer-contents' is buggy - it calls
+              ;; change functions with invalid arguments - so we
+              ;; manually call the change functions here.
+              ;;
+              ;; See emacs bugs #32237, #32278:
+              ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=32237
+              ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=32278
+              (let ((inhibit-modification-hooks t)
+                     (length (- end beg)))
+                (run-hook-with-args 'before-change-functions
+                  beg end)
+                (replace-buffer-contents temp)
+                (run-hook-with-args 'after-change-functions
+                  beg (+ beg (length new-text))
+                  length)))))))))
+
 (defun lsp-rocks--apply-text-edits (edits)
   "Apply the EDITS described in the TextEdit[] object."
   (unless (seq-empty-p edits)
@@ -458,12 +535,14 @@ LSP server result."
         (unwind-protect
             (dolist (edit (lsp-rocks--sort-edits (reverse edits)))
               (progress-reporter-update reporter (cl-incf done))
-              (lsp-rocks--apply-text-edit edit)
-              (when-let* ((insert-text-format (plist-get edit :insert-text-format))
+              (lsp-rocks--apply-text-edit-replace-buffer-contents edit)
+              (when-let* ((insert-text-format (plist-get edit :insertTextFormat))
                           (start (lsp-rocks--position-point (plist-get (plist-get edit :range) :start)))
                           (new-text (plist-get edit :newText)))
                 (when (eq insert-text-format 2)
+                  ;; No `save-excursion' needed since expand snippet will change point anyway
                   (goto-char (+ start (length new-text)))
+                  (lsp-rocks--indent-lines start (point))
                   (lsp-rocks--expand-snippet new-text start (point)))))
           (undo-amalgamate-change-group change-group)
           (progress-reporter-done reporter))))))
@@ -472,7 +551,8 @@ LSP server result."
   "Replace a CompletionItem's label with its insertText.  Apply text edits.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (let* ((item (get-text-property 0 'lsp-rocks--item candidate))
+  (let* ((item (or (get-text-property 0 'resolved-item candidate)
+                   (get-text-property 0 'lsp-rocks--item candidate)))
          (label (plist-get item :label))
          ;; (start (- (point) (length label)))
          (insertText (plist-get item :insertText))
@@ -480,31 +560,46 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
          (insertTextFormat (plist-get item :insertTextFormat))
          (textEdit (plist-get item :textEdit))
          (additionalTextEdits (plist-get item :additionalTextEdits))
-         (snippet-fn (and (eql insertTextFormat 2)
-                          (lsp-rocks--snippet-expansion-fn))))
+         (startPoint (- (point) (length candidate)))
+         (insertTextMode (plist-get item :insertTextMode))
+         ;; (snippet-fn (and (eq insertTextFormat 2)
+         ;;                  (lsp-rocks--snippet-expansion-fn)))
+         )
+    (delete-region startPoint (point))
     (cond (textEdit
-           (delete-region (+ (- (point) (length candidate)))
-                          (point))
            (insert lsp-rocks--last-prefix)
-           (let ((range (plist-get textEdit :range))
-                 (newText (plist-get textEdit :newText)))
-             (pcase-let ((`(,beg . ,end)
-                          (lsp-rocks--range-region range)))
-               (delete-region beg end)
-               (goto-char beg)
-               (funcall (or snippet-fn #'insert) newText))))
-          (snippet-fn
-           ;; A snippet should be inserted, but using plain
-           ;; `insertText'.  This requires us to delete the
-           ;; whole completion, since `insertText' is the full
-           ;; completion's text.
-           (delete-region (- (point) (length candidate)) (point))
-           (funcall snippet-fn (or insertText label)))
-          (insertText
-           (delete-region (- (point) (length candidate)) (point))
-           (insert insertText)))
-    (when (cl-plusp (length additionalTextEdits))
-      (lsp-rocks--apply-text-edits additionalTextEdits))))
+           (lsp-rocks--apply-text-edit textEdit)
+           ;; (let ((range (plist-get textEdit :range))
+           ;;       (newText (plist-get textEdit :newText)))
+           ;;   (pcase-let ((`(,beg . ,end)
+           ;;                (lsp-rocks--range-region range)))
+           ;;     (delete-region beg end)
+           ;;     (goto-char beg)
+           ;;     (funcall (or snippet-fn #'insert) newText)))
+           )
+          ;; (snippet-fn
+          ;; A snippet should be inserted, but using plain
+          ;; `insertText'.  This requires us to delete the
+          ;; whole completion, since `insertText' is the full
+          ;; completion's text.
+          ;; (delete-region (- (point) (length candidate)) (point))
+          ;; (funcall snippet-fn (or insertText label)))
+          ((or insertText label)
+           ;; (delete-region (- (point) (length candidate)) (point))
+           (insert (or insertText label))))
+    (lsp-rocks--indent-lines startPoint (point) insertTextMode)
+    (when (eq insertTextFormat 2)
+      (lsp-rocks--expand-snippet (buffer-substring startPoint (point))
+                                 startPoint
+                                 (point)))
+    ;; (message "additional--- %S %s" additionalTextEdits (get-text-property 0 'resolved-item candidate))
+    (if (cl-plusp (length additionalTextEdits))
+        (lsp-rocks--apply-text-edits additionalTextEdits)
+      (if-let* ((resolved-item (get-text-property 0 'resolved-item candidate))
+                (additionalTextEdits (plist-get resolved-item :additionalTextEdits)))
+          (progn
+            (lsp-rocks--apply-text-edits additionalTextEdits))
+        (message "Not resolved")))))
 
 (defun lsp-rocks--get-match-buffer-by-filepath (name)
   (cl-dolist (buffer (buffer-list))
@@ -755,7 +850,7 @@ File paths with spaces are only supported inside strings."
 
 (defun lsp-rocks--process-formatting (edits)
   "Invoke by LSP Rocks to format the buffer of DATA."
-  (message "here %s" edits)
+  (message "here %s %s" edits (and edits (> (length edits) 0)))
   (if (and edits (> (length edits) 0))
       (lsp-rocks--apply-text-edits edits)
     (error "[LSP ROCKS] No formatting changes provided %s" edits)))
@@ -856,40 +951,56 @@ relied upon."
   "Convert a Completion ITEM to a string."
   (propertize (plist-get item :label) 'lsp-rocks--item item))
 
-(defun lsp-rocks--lsp-position-to-point (pos-plist &optional marker)
-  "Convert LSP position POS-PLIST to Emacs point.
-If optional MARKER, return a marker instead"
-  (save-excursion
-    (save-restriction
-      (widen)
-      (goto-char (point-min))
-      (forward-line (min most-positive-fixnum
-                         (plist-get pos-plist :line)))
-      (unless (eobp) ;; if line was excessive leave point at eob
-        (let ((tab-width 1)
-              (col (plist-get pos-plist :character)))
-          (unless (wholenump col)
-            (message
-             "Caution: LSP server sent invalid character position %s. Using 0 instead."
-             col)
-            (setq col 0))
-          (goto-char (min (+ (line-beginning-position) col)
-                          (line-end-position)))))
-      (if marker (copy-marker (point-marker)) (point)))))
+;; (defun lsp-rocks--lsp-position-to-point (pos-plist &optional marker)
+;;   "Convert LSP position POS-PLIST to Emacs point.
+;; If optional MARKER, return a marker instead"
+;;   (save-excursion
+;;     (save-restriction
+;;       (widen)
+;;       (goto-char (point-min))
+;;       (forward-line (min most-positive-fixnum
+;;                          (plist-get pos-plist :line)))
+;;       (unless (eobp) ;; if line was excessive leave point at eob
+;;         (let ((tab-width 1)
+;;               (col (plist-get pos-plist :character)))
+;;           (unless (wholenump col)
+;;             (message
+;;              "Caution: LSP server sent invalid character position %s. Using 0 instead."
+;;              col)
+;;             (setq col 0))
+;;           (goto-char (min (+ (line-beginning-position) col)
+;;                           (line-end-position)))))
+;;       (if marker (copy-marker (point-marker)) (point)))))
 
-(defun lsp-rocks--range-region (range &optional markers)
+;; TODO fix point if the line or charactor is -1
+(defun lsp-rocks--range-region (range)
   "Return region (BEG . END) that represents LSP RANGE.
 If optional MARKERS, make markers."
-  (let ((beg (lsp-rocks--lsp-position-to-point (plist-get range :start) markers))
-        (end (lsp-rocks--lsp-position-to-point (plist-get range :end) markers)))
+  (let ((beg (lsp-rocks--position-point (plist-get range :start)))
+        (end (lsp-rocks--position-point (plist-get range :end))))
     (cons beg end)))
 
-(defun lsp-rocks--snippet-expansion-fn ()
+(defun lsp-rocks--to-yasnippet-snippet (snippet)
+  "Convert LSP SNIPPET to yasnippet snippet."
+  ;; LSP snippet doesn't escape "{" and "`", but yasnippet requires escaping it.
+  (replace-regexp-in-string (rx (or bos (not (any "$" "\\"))) (group (or "{" "`")))
+                            (rx "\\" (backref 1))
+                            snippet
+                            nil nil 1))
+
+(defun lsp-rocks--snippet-expansion-fn (snippet &optional start end expand-env)
   "Compute a function to expand snippets.
 Doubles as an indicator of snippet support."
-  (and (boundp 'yas-minor-mode)
-       (symbol-value 'yas-minor-mode)
-       'yas-expand-snippet))
+  ;; (and (boundp 'yas-minor-mode)
+  ;;      (symbol-value 'yas-minor-mode)
+  ;;      'yas-expand-snippet)
+  (let* ((inhibit-field-text-motion t)
+         (yas-wrap-around-region nil)
+         (yas-indent-line 'none)
+         (yas-also-auto-indent-first-line nil))
+    (yas-expand-snippet
+     (lsp-rocks--to-yasnippet-snippet snippet)
+     start end expand-env)))
 
 (defun lsp-rocks--format-markup (markup)
   "Format MARKUP according to LSP's spec."

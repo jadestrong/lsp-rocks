@@ -38,6 +38,7 @@ import {
   InsertTextMode,
   ConfigurationRequest,
   PublishDiagnosticsNotification,
+  DidChangeConfigurationNotification,
 } from 'vscode-languageserver-protocol';
 import { MessageSignature, RAL, ResponseError } from 'vscode-jsonrpc/node';
 import { Logger } from 'pino';
@@ -555,6 +556,7 @@ export class LanguageClient {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
       await connection.sendNotification(InitializedNotification.type, {});
+      await connection.sendNotification(DidChangeConfigurationNotification.type, { settings: this.serverConfig?.settings })
 
       return result;
     } catch (error) {
