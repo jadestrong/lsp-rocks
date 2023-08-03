@@ -13,6 +13,7 @@ import { LanguageClient } from '../client';
 import { byteSlice } from '../utils/string';
 import { RunnableDynamicFeature } from './features';
 import filterItems from '../utils/filterItems';
+import { message_emacs } from '../epc-utils';
 
 export interface EmacsCompletionParams extends CompletionParams {
   /* 当前输入所在行的文本 */
@@ -24,7 +25,7 @@ export interface EmacsCompletionParams extends CompletionParams {
 /**
  * Store the CompletionItem corresponding to the label
  */
-const labelCompletionMap: Map<string, CompletionItem> = new Map();
+// const labelCompletionMap: Map<string, CompletionItem> = new Map();
 
 export class CompletionFeature extends RunnableDynamicFeature<
   EmacsCompletionParams,
@@ -42,7 +43,7 @@ export class CompletionFeature extends RunnableDynamicFeature<
     if (!this.client.checkCapabilityForMethod(CompletionRequest.type)) {
       return [];
     }
-    labelCompletionMap.clear();
+    this.client.labelCompletionMap.clear();
     const { line, column, textDocument, position } = params;
 
     const pretext = byteSlice(line, 0, column);
@@ -72,12 +73,19 @@ export class CompletionFeature extends RunnableDynamicFeature<
       return [];
     }
 
-    resp.items.forEach(it => labelCompletionMap.set(it.label, it));
     const completions = filterItems(pretext, resp.items).slice(
       0,
       this.max_completion_size,
     );
-    return completions;
+    const items = completions.map((it, idx) => {
+      const no = `${it.label}-${idx}`
+      this.client.labelCompletionMap.set(no, it);
+      return {
+        ...it,
+        no,
+      }
+    });
+    return items;
   }
 
   public get registrationType(): RegistrationType<CompletionRegistrationOptions> {
@@ -96,7 +104,7 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
   }
 
   public createParams(params: CompletionItem) {
-    const item = labelCompletionMap.get(params.label);
+    const item = this.client.labelCompletionMap.get(params.label);
     return item;
   }
 
@@ -108,6 +116,23 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
       return null;
     }
     const resp = await this.client.sendRequest(CompletionResolveRequest.type, params);
+    // 如果下发了更详细的 detail
+    if (resp && resp.detail && resp.detail !== params.detail) {
+      const { detail, documentation } = resp;
+      if (!documentation) {
+        resp.documentation = {
+          kind: 'markdown',
+          value: detail,
+        }
+      } else if (typeof documentation === 'string') {
+        resp.documentation = `${detail}\n\n${documentation}`;
+      } else {
+        resp.documentation = {
+          ...documentation,
+          value: `${detail}\n\n${documentation.value}`,
+        }
+      }
+    }
     if (resp && resp.textEdit && InsertReplaceEdit.is(resp.textEdit)) {
       return {
         ...resp,

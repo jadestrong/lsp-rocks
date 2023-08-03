@@ -39,6 +39,7 @@ import {
   ConfigurationRequest,
   PublishDiagnosticsNotification,
   DidChangeConfigurationNotification,
+  CompletionItem,
 } from 'vscode-languageserver-protocol';
 import { MessageSignature, RAL, ResponseError } from 'vscode-jsonrpc/node';
 import { Logger } from 'pino';
@@ -101,6 +102,8 @@ export class LanguageClient {
   private _onStop: Promise<void> | undefined;
 
   private dynamicFeatures: Map<string, DynamicFeature<any>>;
+
+  labelCompletionMap = new Map<string, CompletionItem>();
 
   constructor(
     name: string,

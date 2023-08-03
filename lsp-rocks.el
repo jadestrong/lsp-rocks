@@ -487,14 +487,14 @@ LSP server result."
   "Apply the edits described in the TextEdit object in TEXT-EDIT.
 The method uses `replace-buffer-contents'."
   (let* (
-          (source (current-buffer))
-          (new-text (plist-get edit :newText))
-          (region (lsp-rocks--range-region (plist-get edit :range)))
-          (beg (car region))
-          (end (cdr region))
-          ;; ((beg . end) (lsp--range-to-region (lsp-make-range :start (lsp--fix-point start)
-          ;;                                      :end (lsp--fix-point end))))
-          )
+         (source (current-buffer))
+         (new-text (plist-get edit :newText))
+         (region (lsp-rocks--range-region (plist-get edit :range)))
+         (beg (car region))
+         (end (cdr region))
+         ;; ((beg . end) (lsp--range-to-region (lsp-make-range :start (lsp--fix-point start)
+         ;;                                      :end (lsp--fix-point end))))
+         )
     (setq new-text (s-replace "\r" "" (or new-text "")))
     (plist-put edit :newText new-text)
     (with-temp-buffer
@@ -514,13 +514,13 @@ The method uses `replace-buffer-contents'."
               ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=32237
               ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=32278
               (let ((inhibit-modification-hooks t)
-                     (length (- end beg)))
+                    (length (- end beg)))
                 (run-hook-with-args 'before-change-functions
-                  beg end)
+                                    beg end)
                 (replace-buffer-contents temp)
                 (run-hook-with-args 'after-change-functions
-                  beg (+ beg (length new-text))
-                  length)))))))))
+                                    beg (+ beg (length new-text))
+                                    length)))))))))
 
 (defun lsp-rocks--apply-text-edits (edits)
   "Apply the EDITS described in the TextEdit[] object."
@@ -645,7 +645,7 @@ File paths with spaces are only supported inside strings."
                                (lsp-rocks--completion))))
     (no-cache t)
     (sorted t)
-    (annotation (format " (%s)" (lsp-rocks--candidate-kind arg)))
+    (annotation (lsp-rocks--candidate-kind arg))
     (doc-buffer (lsp-rocks--doc-buffer arg))
     (quickhelp-string (lsp-rocks--doc-buffer arg))
     (meta (get-text-property 0 'detail arg))
@@ -859,8 +859,10 @@ File paths with spaces are only supported inside strings."
 (defun lsp-rocks--doc-buffer (item)
   "Get ITEM doc."
   (unless (get-text-property 0 'resolved-item item)
-    (let* ((resolved-item (lsp-rocks--sync-resolve (read item))))
+    (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
+           (resolved-item (lsp-rocks--sync-resolve (plist-get completion-item :no)))) ;; (read item) 去掉了属性？
       (put-text-property 0 (length item) 'resolved-item resolved-item item)))
+  (message "here? %s" (get-text-property 0 'resolved-item item))
   (when-let* ((resolved-item (get-text-property 0 'resolved-item item))
               (documentation (plist-get resolved-item :documentation))
               (formatted (lsp-rocks--format-markup documentation)))
@@ -944,8 +946,13 @@ relied upon."
 (defun lsp-rocks--candidate-kind (item)
   "Return ITEM's kind."
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
-         (kind (and completion-item (plist-get completion-item :kind))))
-    (alist-get kind lsp-rocks--kind->symbol)))
+         (kind (and completion-item (plist-get completion-item :kind)))
+         (detail (and completion-item (plist-get completion-item :detail))))
+    (concat
+     (when detail
+       (concat " " (s-replace "\r" "" detail)))
+     (when-let ((kind-name (alist-get kind lsp-rocks--kind->symbol)))
+       (format " (%s)" kind-name)))))
 
 (defun lsp-rocks--make-candidate (item)
   "Convert a Completion ITEM to a string."
@@ -1527,6 +1534,19 @@ This is invoked by lsp-rocks."
     ;; (when flycheck-mode
     ;;   (flycheck-mode 1))
     ))
+
+(defun lsp-rocks--on-set-visited-file-name (old-func &rest args)
+  "Advice around function `set-visited-file-name'.
+
+This advice sends textDocument/didClose for the old file and
+textDocument/didOpen for the new file."
+  (when lsp-rocks-mode
+    (lsp-rocks--did-close))
+  (prog1 (apply old-func args)
+    (when lsp-rocks-mode
+      (lsp-rocks--did-open))))
+
+(advice-add 'set-visited-file-name :around #'lsp-rocks--on-set-visited-file-name)
 
 (defun lsp-rocks--enable ()
   (when buffer-file-name
