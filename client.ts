@@ -103,7 +103,8 @@ export class LanguageClient {
 
   private dynamicFeatures: Map<string, DynamicFeature<any>>;
 
-  labelCompletionMap = new Map<string, CompletionItem>();
+  labelCompletionMap = new Map<string, EmacsCompletionItem>();
+  // completionItems = new Array<CompletionItem>();
 
   constructor(
     name: string,
@@ -329,7 +330,11 @@ export class LanguageClient {
         logger.info({
           data: params,
         });
-        diagnosticCenter.setDiagnosticsByProjectRoot(this.projectRoot, this.name, params);
+        diagnosticCenter.setDiagnosticsByProjectRoot(
+          this.projectRoot,
+          this.name,
+          params,
+        );
       });
 
       await this.initialize(connection);
@@ -559,7 +564,10 @@ export class LanguageClient {
         resolvedTextDocumentSync: textDocumentSyncOptions,
       });
       await connection.sendNotification(InitializedNotification.type, {});
-      await connection.sendNotification(DidChangeConfigurationNotification.type, { settings: this.serverConfig?.settings })
+      await connection.sendNotification(
+        DidChangeConfigurationNotification.type,
+        { settings: this.serverConfig?.settings },
+      );
 
       return result;
     } catch (error) {

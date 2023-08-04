@@ -1,4 +1,5 @@
 import {
+  CompletionItem,
   ConfigurationItem,
   InitializeResult,
   type TextDocumentIdentifier,
@@ -33,5 +34,11 @@ declare global {
     initializeOptions?: () => Record<string, unknown>; // default return settings
     activate: (filepath: string, workspaceRoot: string) => boolean; // default return false
     initializedFn?: (result: InitializeResult) => InitializeResult;
+  }
+
+  interface EmacsCompletionItem extends CompletionItem {
+    no?: string;
+    source?: string;
+    resolved?: CompletionItem;
   }
 }

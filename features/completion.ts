@@ -13,7 +13,8 @@ import { LanguageClient } from '../client';
 import { byteSlice } from '../utils/string';
 import { RunnableDynamicFeature } from './features';
 import filterItems from '../utils/filterItems';
-import { message_emacs } from '../epc-utils';
+// import { message_emacs } from '../epc-utils';
+import { logger } from '../logger';
 
 export interface EmacsCompletionParams extends CompletionParams {
   /* 当前输入所在行的文本 */
@@ -77,13 +78,15 @@ export class CompletionFeature extends RunnableDynamicFeature<
       0,
       this.max_completion_size,
     );
-    const items = completions.map((it, idx) => {
-      const no = `${it.label}-${idx}`
-      this.client.labelCompletionMap.set(no, it);
-      return {
+    const items = completions.map<EmacsCompletionItem>((it, idx) => {
+      const no = `${it.label}-${idx}`;
+      const item = {
         ...it,
         no,
-      }
+        source: this.client.name,
+      };
+      this.client.labelCompletionMap.set(no, item);
+      return item;
     });
     return items;
   }
@@ -108,14 +111,24 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
     return item;
   }
 
-  public async runWith(params: CompletionItem | undefined) {
+  public async runWith(params: EmacsCompletionItem | undefined) {
     if (
       !this.client.checkCapabilityForMethod(CompletionResolveRequest.type) ||
       !params
     ) {
       return null;
     }
-    const resp = await this.client.sendRequest(CompletionResolveRequest.type, params);
+    if (params.resolved) {
+      logger.info({
+        msg: 'Hit resolve cache',
+        data: params.resolved,
+      });
+      return params.resolved;
+    }
+    let resp = await this.client.sendRequest(
+      CompletionResolveRequest.type,
+      params,
+    );
     // 如果下发了更详细的 detail
     if (resp && resp.detail && resp.detail !== params.detail) {
       const { detail, documentation } = resp;
@@ -123,24 +136,27 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
         resp.documentation = {
           kind: 'markdown',
           value: detail,
-        }
+        };
       } else if (typeof documentation === 'string') {
         resp.documentation = `${detail}\n\n${documentation}`;
       } else {
         resp.documentation = {
           ...documentation,
           value: `${detail}\n\n${documentation.value}`,
-        }
+        };
       }
     }
     if (resp && resp.textEdit && InsertReplaceEdit.is(resp.textEdit)) {
-      return {
+      resp = {
         ...resp,
-        textEdit: TextEdit.replace(resp.textEdit.replace, resp.textEdit.newText),
-      }
+        textEdit: TextEdit.replace(
+          resp.textEdit.replace,
+          resp.textEdit.newText,
+        ),
+      };
     }
+    params.resolved = resp;
     return resp;
-
   }
 
   public get registrationType() {
