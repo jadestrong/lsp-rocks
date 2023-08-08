@@ -63,7 +63,7 @@ import { TypeDefinitionFeature } from './features/typeDefinition';
 import { HoverFeature } from './features/hover';
 import { SignatureHelpFeature } from './features/signatureHelp';
 import { PrepareRenameFeature, RenameFeature } from './features/rename';
-import { message_emacs } from './epc-utils';
+import { get_emacs_func_result, message_emacs } from './epc-utils';
 import { createLogger, logger } from './logger';
 import Connection from './connection';
 import data2String from './utils/data2String';
@@ -102,6 +102,8 @@ export class LanguageClient {
   private _onStop: Promise<void> | undefined;
 
   private dynamicFeatures: Map<string, DynamicFeature<any>>;
+
+  openedFiles: string[] = [];
 
   labelCompletionMap = new Map<string, EmacsCompletionItem>();
   // completionItems = new Array<CompletionItem>();
@@ -327,9 +329,9 @@ export class LanguageClient {
       });
 
       connection.onNotification(PublishDiagnosticsNotification.type, params => {
-        logger.info({
-          data: params,
-        });
+        // logger.info({
+        //   data: params,
+        // });
         diagnosticCenter.setDiagnosticsByProjectRoot(
           this.projectRoot,
           this.name,
@@ -352,6 +354,7 @@ export class LanguageClient {
   }
 
   public async restart() {
+    this.openedFiles = [];
     await this.stop();
     await this.start();
   }
@@ -676,6 +679,18 @@ export class LanguageClient {
   }
 
   public async on(method: string, params: any) {
+    if (
+      !this.openedFiles.includes(params.textDocument.uri) &&
+      method !== 'textDocument/didOpen' &&
+      method !== 'textDocument/didClose'
+    ) {
+      const openParams = await get_emacs_func_result('lsp-rocks--open-params');
+      await (
+        this.dynamicFeatures.get(
+          'textDocument/didOpen',
+        ) as RunnableDynamicFeature<any, any, any, any>
+      ).run(openParams);
+    }
     return (
       this.dynamicFeatures.get(method) as RunnableDynamicFeature<
         any,

@@ -36,7 +36,8 @@ export class LspRocks {
 
   public async start() {
     this._server = await init_epc_server();
-    this._server?.logger && (this._server.logger.level = IS_DEBUG ? 'debug' : 'info');
+    this._server?.logger &&
+      (this._server.logger.level = IS_DEBUG ? 'debug' : 'info');
     this._server?.defineMethod('message', async (message: RequestMessage) => {
       this.recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
@@ -66,19 +67,42 @@ export class LspRocks {
     });
 
     this._server?.defineMethod('pullDiagnostics', (filePath: string) => {
-      logger.info({
-        cmd: 'pullDiagnostics',
-        filePath,
-      })
+      // logger.info({
+      //   cmd: 'pullDiagnostics',
+      //   filePath,
+      // });
       const diagnostics = diagnosticCenter.getDiagnosticsByFilePath(filePath);
 
-      logger.debug({
-        cmd: 'pullDiagnostics',
-        filePath,
-        diagnostics,
-      })
+      // logger.debug({
+      //   cmd: 'pullDiagnostics',
+      //   filePath,
+      //   diagnostics,
+      // });
       return diagnostics;
-    })
+    });
+
+    this._server?.defineMethod('resolve', async (message: RequestMessage) => {
+      logger.info({
+        cmd: message.cmd,
+        message,
+      })
+      this.recentRequests.set(message.cmd, message.id);
+      const response = await this.messageHandler(message);
+      return response?.data;
+    });
+
+    this._server?.defineMethod('restart', async (projectRoot: string) => {
+      if (!projectRoot) {
+        message_emacs('No projectRoot provide to restart.');
+        return;
+      }
+      const clients = this._clients.get(projectRoot);
+      const tsls = clients?.find(item => item.name === 'ts-ls');
+      if (!tsls) {
+        message_emacs('No language server(s) is associated with this buffer.');
+      }
+      await tsls?.restart();
+    });
 
     this.configs = await importLangServers();
     message_emacs('config length ' + this.configs.length);
@@ -139,30 +163,36 @@ export class LspRocks {
       data = await this.doCompletion(clients, req);
     } else if (req.cmd === 'textDocument/formatting') {
       // 如果是 formating ，则需要找到其中一个支持该能力的 server 发送请求即可
-      const [client] = clients.filter(item => item.checkCapabilityForMethod(req.cmd));
+      const [client] = clients.filter(item =>
+        item.checkCapabilityForMethod(req.cmd),
+      );
       logger.debug({
         msg: 'Did find a client?',
         name: client?.name,
-      })
+      });
       if (client) {
         data = await client.on(req.cmd, req.params);
       } else {
-        data = []
+        data = [];
       }
     } else {
       data = await Promise.all(
         clients.map(client => client.on(req.cmd, req.params)),
       );
-      data = data.filter(item => !!item);
+      logger.debug({
+        msg: 'request response',
+        data,
+      });
+      data = data.filter(item => (Array.isArray(item) ? item.length : !!item));
       data = data[0];
     }
     // data = await Promise.race([
     //   temp,
     // ]);
-    logger.debug({
-      cmd: req.cmd,
-      data,
-    });
+    // logger.debug({
+    //   cmd: req.cmd,
+    //   data,
+    // });
     // data = await client.on(req.cmd, req.params);
     if (this.recentRequests.get(req.cmd) != req.id) {
       return;
@@ -239,11 +269,7 @@ export class LspRocks {
     project: string,
     config: ServerConfig,
   ) {
-    const client = new LanguageClient(
-      name,
-      project,
-      config,
-    );
+    const client = new LanguageClient(name, project, config);
     await client.start();
 
     return client;

@@ -28,6 +28,10 @@ export class DidOpenTextDocumentFeature extends RunnableDynamicFeature<
   public runWith(params: DidOpenTextDocumentParams) {
     // const triggerCharacters = this.client.triggerCharacters;
     //   eval_in_emacs('lsp-rocks--record-trigger-characters', filepath, triggerCharacters);
+    if (this.client.openedFiles.includes(params.textDocument.uri)) {
+      return;
+    }
+    this.client.openedFiles.push(params.textDocument.uri);
     return this.client.sendNotification(this.registrationType.method, params);
   }
 
@@ -48,7 +52,12 @@ export class DidCloseTextDocumentFeature extends RunnableDynamicFeature<
 
   public runWith(params: DidCloseTextDocumentParams) {
     // NOTE delete file and shutdown server and client
-    // if (this.client)
+    if (!this.client.openedFiles.includes(params.textDocument.uri)) {
+      return;
+    }
+    this.client.openedFiles = this.client.openedFiles.filter(
+      file => params.textDocument.uri !== file,
+    );
     return this.client.sendNotification(this.registrationType.method, params);
   }
 

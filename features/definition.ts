@@ -6,7 +6,7 @@ import {
   Location,
   LocationLink,
 } from 'vscode-languageserver-protocol';
-import { fileURLToPath } from 'node:url';
+import { URI } from 'vscode-uri';
 import { LanguageClient } from '../client';
 import { RunnableDynamicFeature } from './features';
 
@@ -30,14 +30,14 @@ export class DefinitionFeature extends RunnableDynamicFeature<
     if (Array.isArray(resp)) {
       return resp.map((it: Location | LocationLink) => {
         if (this.isLocation(it)) {
-          return { uri: fileURLToPath(it.uri), range: it.range };
+          return { uri: URI.parse(it.uri).path, range: it.range };
         } else {
-          return { uri: fileURLToPath(it.targetUri), range: it.targetRange };
+          return { uri: URI.parse(it.targetUri).path, range: it.targetRange };
         }
       });
     }
 
-    return [{ uri: fileURLToPath(resp.uri), range: resp.range }];
+    return [{ uri: URI.parse(resp.uri).path, range: resp.range }];
   }
 
   private isLocation(value: any): value is Location {

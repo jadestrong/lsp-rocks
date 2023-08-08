@@ -39,6 +39,6 @@ declare global {
   interface EmacsCompletionItem extends CompletionItem {
     no?: string;
     source?: string;
-    resolved?: CompletionItem;
+    resolving?: Promise<CompletionItem>;
   }
 }

@@ -4,6 +4,8 @@ const languageIdMap: Record<string, string> = {
   '.ts': 'typescript',
   '.jsx': 'javascriptreact',
   '.js': 'javascript',
+  '.mts': 'typescript',
+  '.mjs': 'javascript',
   '.html': 'html',
   '.css': 'css',
   '.json': 'json',

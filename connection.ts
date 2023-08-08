@@ -98,13 +98,13 @@ class Connection {
       commonLogger.error({
         msg: `${serverOptions.command} Connection error `,
         data: err,
-      })
+      });
     });
     connection.onClose(() => {
       message_emacs('closeHandler');
       commonLogger.error({
         msg: `${serverOptions.command} closeHandler`,
-      })
+      });
     });
 
     connection.trace(Trace.Verbose, {

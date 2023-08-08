@@ -128,7 +128,7 @@ When only one definition found, jump to it right away instead."
 
 (defun xref--show-defs (xrefs display-action)
   (xref--push-markers)
-  (funcall xref-show-definitions-function xrefs
+  (funcall xref-show-xrefs-function xrefs
            `((window . ,(selected-window))
              (display-action . ,display-action)
              (auto-jump . ,xref-auto-jump-to-first-definition))))

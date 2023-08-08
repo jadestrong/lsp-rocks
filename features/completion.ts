@@ -47,6 +47,10 @@ export class CompletionFeature extends RunnableDynamicFeature<
     this.client.labelCompletionMap.clear();
     const { line, column, textDocument, position } = params;
 
+    logger.debug({
+      message: 'completion request',
+      data: params,
+    });
     const pretext = byteSlice(line, 0, column);
     const triggerCharacter = this.client.triggerCharacters.find(triggerChar =>
       pretext.endsWith(triggerChar),
@@ -111,24 +115,40 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
     return item;
   }
 
-  public async runWith(params: EmacsCompletionItem | undefined) {
-    if (
-      !this.client.checkCapabilityForMethod(CompletionResolveRequest.type) ||
-      !params
-    ) {
-      return null;
+  private isRequestCapable(): boolean {
+    return this.client.checkCapabilityForMethod(CompletionResolveRequest.type);
+  }
+
+  private async resolveCompletionRequest(params: EmacsCompletionItem) {
+    if (params.resolving) {
+      logger.info(`${params.no} hit a resolve cache`);
+      return params.resolving;
     }
-    if (params.resolved) {
-      logger.info({
-        msg: 'Hit resolve cache',
-        data: params.resolved,
-      });
-      return params.resolved;
-    }
-    let resp = await this.client.sendRequest(
+    params.resolving = this.client.sendRequest(
       CompletionResolveRequest.type,
       params,
     );
+    return params.resolving;
+  }
+
+  public async runWith(params: EmacsCompletionItem | undefined) {
+    if (!this.isRequestCapable() || !params) {
+      return null;
+    }
+    let resp: CompletionItem | undefined;
+    if (params.resolving) {
+      logger.info(`${params.no} hit a resolve cache`);
+      resp = await params.resolving;
+    } else {
+      resp = await this.resolveCompletionRequest(params);
+    }
+
+    // let resp = await (params.resolving
+    //   ? params.resolving
+    //   : (params.resolving = this.client.sendRequest(
+    //       CompletionResolveRequest.type,
+    //       params,
+    //     )));
     // 如果下发了更详细的 detail
     if (resp && resp.detail && resp.detail !== params.detail) {
       const { detail, documentation } = resp;
@@ -147,7 +167,7 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
       }
     }
     if (resp && resp.textEdit && InsertReplaceEdit.is(resp.textEdit)) {
-      resp = {
+      return {
         ...resp,
         textEdit: TextEdit.replace(
           resp.textEdit.replace,
@@ -155,7 +175,6 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
         ),
       };
     }
-    params.resolved = resp;
     return resp;
   }
 

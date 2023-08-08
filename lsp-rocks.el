@@ -551,54 +551,63 @@ The method uses `replace-buffer-contents'."
   "Replace a CompletionItem's label with its insertText.  Apply text edits.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (let* ((item (or (get-text-property 0 'resolved-item candidate)
-                   (get-text-property 0 'lsp-rocks--item candidate)))
-         (label (plist-get item :label))
-         ;; (start (- (point) (length label)))
-         (insertText (plist-get item :insertText))
-         ;; 1 = plaintext, 2 = snippet
-         (insertTextFormat (plist-get item :insertTextFormat))
-         (textEdit (plist-get item :textEdit))
-         (additionalTextEdits (plist-get item :additionalTextEdits))
-         (startPoint (- (point) (length candidate)))
-         (insertTextMode (plist-get item :insertTextMode))
-         ;; (snippet-fn (and (eq insertTextFormat 2)
-         ;;                  (lsp-rocks--snippet-expansion-fn)))
-         )
+  (let* ((completion-item (get-text-property 0 'lsp-rocks--item candidate))
+          (resolved-item (get-text-property 0 'resolved-item candidate))
+          (source (plist-get completion-item :source)))
+    (if (equal source "ts-ls")
+      (if resolved-item
+        (lsp-rocks--compoany-post-completion-item resolved-item candidate)
+        (deferred:$
+          (lsp-rocks--async-resolve (plist-get completion-item :no))
+          (deferred:nextc it
+            (lambda (resolved)
+              (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
+              (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate)))))
+      (lsp-rocks--compoany-post-completion-item (or resolved-item completion-item) candidate))))
+
+(defun lsp-rocks--compoany-post-completion-item (item candidate)
+  "Complete ITEM."
+  (let* ((label (plist-get item :label))
+          (insertText (plist-get item :insertText))
+          ;; 1 = plaintext, 2 = snippet
+          (insertTextFormat (plist-get item :insertTextFormat))
+          (textEdit (plist-get item :textEdit))
+          (additionalTextEdits (plist-get item :additionalTextEdits))
+          (startPoint (- (point) (length candidate)))
+          (insertTextMode (plist-get item :insertTextMode)))
     (delete-region startPoint (point))
     (cond (textEdit
-           (insert lsp-rocks--last-prefix)
-           (lsp-rocks--apply-text-edit textEdit)
-           ;; (let ((range (plist-get textEdit :range))
-           ;;       (newText (plist-get textEdit :newText)))
-           ;;   (pcase-let ((`(,beg . ,end)
-           ;;                (lsp-rocks--range-region range)))
-           ;;     (delete-region beg end)
-           ;;     (goto-char beg)
-           ;;     (funcall (or snippet-fn #'insert) newText)))
-           )
-          ;; (snippet-fn
-          ;; A snippet should be inserted, but using plain
-          ;; `insertText'.  This requires us to delete the
-          ;; whole completion, since `insertText' is the full
-          ;; completion's text.
-          ;; (delete-region (- (point) (length candidate)) (point))
-          ;; (funcall snippet-fn (or insertText label)))
-          ((or insertText label)
-           ;; (delete-region (- (point) (length candidate)) (point))
-           (insert (or insertText label))))
+            (insert lsp-rocks--last-prefix)
+            (lsp-rocks--apply-text-edit textEdit)
+            ;; (let ((range (plist-get textEdit :range))
+            ;;       (newText (plist-get textEdit :newText)))
+            ;;   (pcase-let ((`(,beg . ,end)
+            ;;                (lsp-rocks--range-region range)))
+            ;;     (delete-region beg end)
+            ;;     (goto-char beg)
+            ;;     (funcall (or snippet-fn #'insert) newText)))
+            )
+      ;; (snippet-fn
+      ;; A snippet should be inserted, but using plain
+      ;; `insertText'.  This requires us to delete the
+      ;; whole completion, since `insertText' is the full
+      ;; completion's text.
+      ;; (delete-region (- (point) (length candidate)) (point))
+      ;; (funcall snippet-fn (or insertText label)))
+      ((or insertText label)
+        ;; (delete-region (- (point) (length candidate)) (point))
+        (insert (or insertText label))))
     (lsp-rocks--indent-lines startPoint (point) insertTextMode)
     (when (eq insertTextFormat 2)
       (lsp-rocks--expand-snippet (buffer-substring startPoint (point))
-                                 startPoint
-                                 (point)))
+        startPoint
+        (point)))
     ;; (message "additional--- %S %s" additionalTextEdits (get-text-property 0 'resolved-item candidate))
     (if (cl-plusp (length additionalTextEdits))
-        (lsp-rocks--apply-text-edits additionalTextEdits)
-      (if-let* ((resolved-item (get-text-property 0 'resolved-item candidate))
-                (additionalTextEdits (plist-get resolved-item :additionalTextEdits)))
-          (progn
-            (lsp-rocks--apply-text-edits additionalTextEdits))
+      (lsp-rocks--apply-text-edits additionalTextEdits)
+      (if-let ((resolved-item (get-text-property 0 'resolved-item candidate)))
+        (if-let (additionalTextEdits (plist-get resolved-item :additionalTextEdits))
+          (lsp-rocks--apply-text-edits additionalTextEdits))
         (message "Not resolved")))))
 
 (defun lsp-rocks--get-match-buffer-by-filepath (name)
@@ -610,7 +619,6 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
         (cl-return buffer)))))
 
 (defun lsp-rocks--record-trigger-characters (filename trigger-characters)
-  (message "filename %s trigger-characters: %s" filename trigger-characters)
   (when-let ((buffer (lsp-rocks--get-match-buffer-by-filepath filename)))
     (with-current-buffer buffer
       (setq-local lsp-rocks--completion-trigger-characters trigger-characters))))
@@ -652,14 +660,16 @@ File paths with spaces are only supported inside strings."
     (post-completion (lsp-rocks--company-post-completion arg))))
 
 ;;; request functions
+(defun lsp-rocks--open-params ()
+  (list :textDocument
+    (list :uri buffer-file-name
+      :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
+      :version 0
+      :text (buffer-substring-no-properties (point-min) (point-max)))))
+
 (defun lsp-rocks--did-open ()
   (if buffer-file-name
-      (lsp-rocks--request "textDocument/didOpen"
-                          (list :textDocument
-                                (list :uri buffer-file-name
-                                      :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
-                                      :version 0
-                                      :text (buffer-substring-no-properties (point-min) (point-max)))))))
+      (lsp-rocks--request "textDocument/didOpen" (lsp-rocks--open-params))))
 
 (defun lsp-rocks--did-close ()
   "Send textDocument/didClose notification."
@@ -704,6 +714,13 @@ File paths with spaces are only supported inside strings."
   (lsp-rocks--sync "completionItem/resolve"
                    (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))
 
+(defun lsp-rocks--async-resolve (label)
+  (when-let ((id (lsp-rocks--request-id)))
+    (puthash "completionItem/resolve" id lsp-rocks--recent-requests)
+    (lsp-rocks-call-async "resolve"
+      (list :id id :cmd "completionItem/resolve" :params
+        (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))))
+
 (defun lsp-rocks-find-definition ()
   "Find definition."
   (interactive)
@@ -747,6 +764,16 @@ File paths with spaces are only supported inside strings."
   ;;                                 :triggerCharacter triggerCharacter
   ;;                                 :isRetrigger isRetrigger)))
   )
+
+(defun lsp-rocks-restart-ts-ls ()
+  "Restart ts-ls server."
+  (interactive)
+  (message "[LSP ROCKS] restarting...")
+  (deferred:$
+   (lsp-rocks-call-async "restart" (lsp-rocks--suggest-project-root))
+   (deferred:nextc it
+                   (lambda ()
+                     (message "[LSP ROCKS] restart successed.")))))
 
 (defun lsp-rocks-signature-help ()
   "Display the type signature and documentation of the thing at point."
@@ -836,11 +863,11 @@ File paths with spaces are only supported inside strings."
                       (append (list
                                :options
                                (list
-                                :tab-size (symbol-value (lsp-rocks--get-indent-width major-mode))
-                                :insert-spaces (not indent-tabs-mode)
-                                :trim-trailing-whitespace lsp-rocks-trim-trailing-whitespace
-                                :insert-final-newline lsp-rocks-insert-final-newline
-                                :trim-final-newlinesmm lsp-rocks-trim-final-newlines))
+                                :tabSize (symbol-value (lsp-rocks--get-indent-width major-mode))
+                                :insertSpaces (not indent-tabs-mode)
+                                :trimTrailingWhitespace lsp-rocks-trim-trailing-whitespace
+                                :insertFinalNewline lsp-rocks-insert-final-newline
+                                :trimFinalNewlinesmm lsp-rocks-trim-final-newlines))
                               (lsp-rocks--TextDocumentIdentifier)))
   ;; (deferred:nextc it
   ;;                 (lambda (text-edits)
@@ -850,7 +877,6 @@ File paths with spaces are only supported inside strings."
 
 (defun lsp-rocks--process-formatting (edits)
   "Invoke by LSP Rocks to format the buffer of DATA."
-  (message "here %s %s" edits (and edits (> (length edits) 0)))
   (if (and edits (> (length edits) 0))
       (lsp-rocks--apply-text-edits edits)
     (error "[LSP ROCKS] No formatting changes provided %s" edits)))
@@ -862,7 +888,6 @@ File paths with spaces are only supported inside strings."
     (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
            (resolved-item (lsp-rocks--sync-resolve (plist-get completion-item :no)))) ;; (read item) 去掉了属性？
       (put-text-property 0 (length item) 'resolved-item resolved-item item)))
-  (message "here? %s" (get-text-property 0 'resolved-item item))
   (when-let* ((resolved-item (get-text-property 0 'resolved-item item))
               (documentation (plist-get resolved-item :documentation))
               (formatted (lsp-rocks--format-markup documentation)))
@@ -1099,8 +1124,8 @@ Doubles as an indicator of snippet support."
                             (save-excursion
                               (save-restriction
                                 (widen)
-                                (let* ((beg (lsp-rocks--lsp-position-to-point start))
-                                       (end (lsp-rocks--lsp-position-to-point end))
+                                (let* ((beg (lsp-rocks--position-point start))
+                                       (end (lsp-rocks--position-point end))
                                        (bol (progn (goto-char beg) (line-beginning-position)))
                                        (summary (buffer-substring bol (line-end-position)))
                                        (hi-beg (- beg bol))
@@ -1418,7 +1443,6 @@ Doubles as an indicator of snippet support."
 
 (defun lsp-rocks-register-internal-hooks ()
   "Register internal hooks."
-  (message "run register internal hooks")
   (dolist (hook lsp-rocks--internal-hooks)
     (add-hook (car hook) (cdr hook) nil t))
   (lsp-rocks-diagnostics-flycheck-enable))
@@ -1426,7 +1450,6 @@ Doubles as an indicator of snippet support."
 (defun lsp-rocks-diagnostics--flycheck-start (checker callback)
   "Start an LSP syntax check with CHECKER.
 CALLBACK is the status callback passed by Flycheck."
-  (message "start???")
   (deferred:$
    (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
    (deferred:nextc it
@@ -1516,7 +1539,7 @@ This is invoked by lsp-rocks."
     (add-to-list 'flycheck-checkers 'lsp-rocks)
     (unless (flycheck-checker-supports-major-mode-p 'lsp-rocks major-mode)
       (flycheck-add-mode 'lsp-rocks major-mode)))
-  ;; (flycheck-mode 1)
+  (flycheck-mode 1)
   ;; (flycheck-stop)
   ;; (setq-local flycheck-checker 'lsp-rocks)
   ;; (make-local-variable 'flycheck-checkers)
