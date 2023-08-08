@@ -81,7 +81,9 @@
 
 (defun lsp-rocks--eval-in-emacs-func (sexp-string)
   "Eval SEXP-STRING."
-  (eval (read sexp-string))
+  ;; 当存在中文时， read 无法正常读取中文
+  (eval (car (car (read-from-string (format "%s" sexp-string)))))
+  ;; (eval (read sexp-string))
   ;; Return nil to avoid epc error `Got too many arguments in the reply'.
   nil)
 
