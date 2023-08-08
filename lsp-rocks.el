@@ -881,7 +881,7 @@ File paths with spaces are only supported inside strings."
   "Invoke by LSP Rocks to format the buffer of DATA."
   (if (and edits (> (length edits) 0))
       (lsp-rocks--apply-text-edits edits)
-    (error "[LSP ROCKS] No formatting changes provided %s" edits)))
+    (message "[LSP ROCKS] No formatting changes provided")))
 
 ;;;;;;;; sync request
 (defun lsp-rocks--doc-buffer (item)
