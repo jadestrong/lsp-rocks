@@ -444,7 +444,7 @@ export class LanguageClient {
                   InsertTextMode.adjustIndentation,
                 ],
               },
-              labelDetailsSupport: true,
+              // labelDetailsSupport: true,
             },
           },
           publishDiagnostics: {

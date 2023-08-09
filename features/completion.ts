@@ -10,7 +10,6 @@ import {
   TextEdit,
 } from 'vscode-languageserver-protocol';
 import { LanguageClient } from '../client';
-import { byteSlice } from '../utils/string';
 import { RunnableDynamicFeature } from './features';
 import filterItems from '../utils/filterItems';
 // import { message_emacs } from '../epc-utils';
@@ -45,13 +44,9 @@ export class CompletionFeature extends RunnableDynamicFeature<
       return [];
     }
     this.client.labelCompletionMap.clear();
-    const { line, column, textDocument, position } = params;
+    const { line, textDocument, position } = params;
 
-    logger.debug({
-      message: 'completion request',
-      data: params,
-    });
-    const pretext = byteSlice(line, 0, column);
+    const pretext = line.slice(0, position.character);
     const triggerCharacter = this.client.triggerCharacters.find(triggerChar =>
       pretext.endsWith(triggerChar),
     );
@@ -78,6 +73,13 @@ export class CompletionFeature extends RunnableDynamicFeature<
       return [];
     }
 
+    logger.debug({
+      messsage: 'filter items',
+      data: {
+        pretext,
+        items: resp.items.length,
+      }
+    })
     const completions = filterItems(pretext, resp.items).slice(
       0,
       this.max_completion_size,

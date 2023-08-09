@@ -18,7 +18,7 @@ const eslint: ServerConfig = {
       // const filePath = URI.parse(scopeUri).path;
       // 找出这个 file 所属的 projectRoot
       return {
-        validate: 'on',
+        validate: 'probe',
         packageManager: 'npm',
         useESLintClass: false,
         codeAction: {

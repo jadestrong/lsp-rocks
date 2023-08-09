@@ -704,8 +704,7 @@ File paths with spaces are only supported inside strings."
 
 (defun lsp-rocks--completion ()
   (lsp-rocks--request "textDocument/completion"
-                      (append `(:line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
-                                :column ,(current-column))
+                      (append `(:line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position)))
                               (lsp-rocks--TextDocumentPosition))))
 
 (defun lsp-rocks--resolve (label)
@@ -974,10 +973,13 @@ relied upon."
   "Return ITEM's kind."
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
          (kind (and completion-item (plist-get completion-item :kind)))
-         (detail (and completion-item (plist-get completion-item :detail))))
+          (detail (and completion-item (plist-get completion-item :detail)))
+          (label-detail (and completion-item (plist-get completion-item :labelDetails))))
     (concat
      (when detail
        (concat " " (s-replace "\r" "" detail)))
+      (when-let (description (and label-detail (plist-get label-detail :description)))
+        (format " %s" description))
      (when-let ((kind-name (alist-get kind lsp-rocks--kind->symbol)))
        (format " (%s)" kind-name)))))
 
@@ -1110,11 +1112,31 @@ Doubles as an indicator of snippet support."
     (setq lsp-rocks--xref-callback callback)
     (lsp-rocks-find-type-definition)))
 
+
+(defcustom lsp-rocks-xref-force-references nil
+  "If non-nil threat everything as references(e. g. jump if only one item.)"
+  :group 'lsp-rocks
+  :type 'boolean)
+
+(defun lsp-rocks-show-xrefs (xrefs display-action references?)
+  (unless (region-active-p) (push-mark nil t))
+  (if (boundp 'xref-show-definitions-function)
+      (with-no-warnings
+        (xref-push-marker-stack)
+        (funcall (if (and references? (not lsp-xref-force-references))
+                     xref-show-xrefs-function
+                   xref-show-definitions-function)
+                 (-const xrefs)
+                 `((window . ,(selected-window))
+                   (display-action . ,display-action)
+                   ,(if (and references? (not lsp-xref-force-references))
+                        `(auto-jump . ,xref-auto-jump-to-first-xref)
+                      `(auto-jump . ,xref-auto-jump-to-first-definition)))))
+    (xref--show-xrefs xrefs display-action)))
+
 (defun lsp-rocks--process-find-definition (locations)
   ""
-  (when (and locations lsp-rocks--xref-callback)
-    (funcall lsp-rocks--xref-callback
-             (cl-mapcar (lambda (it)
+  (when-let* ((locs (cl-mapcar (lambda (it)
                           (let* ((filepath (plist-get it :uri))
                                  (range (plist-get it :range))
                                  (start (plist-get range :start))
@@ -1136,7 +1158,8 @@ Doubles as an indicator of snippet support."
                                     (add-face-text-property hi-beg hi-end 'xref-match t summary))
                                   (xref-make summary
                                              (xref-make-file-location filepath (1+ start-line) start-column)))))))
-                        locations))))
+                        locations)))
+    (lsp-rocks-show-xrefs locs nil nil)))
 
 (defface lsp-rocks-hover-posframe
   '((t :inherit tooltip))

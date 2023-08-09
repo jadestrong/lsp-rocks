@@ -22,7 +22,14 @@ export class HoverFeature extends RunnableDynamicFeature<
     super();
   }
 
+  private isRequestCapable(): boolean {
+    return this.client.checkCapabilityForMethod(HoverRequest.type);
+  }
+
   public async runWith(params: HoverParams): Promise<string | null> {
+    if (!this.isRequestCapable()) {
+      return null;
+    }
     const resp = await this.client.sendRequest(HoverRequest.type, params);
     if (resp == null) return null;
 

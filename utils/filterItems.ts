@@ -3,7 +3,6 @@ import {
   type CompletionItem,
   TextEdit,
 } from 'vscode-languageserver-protocol';
-import { byteSlice } from './string';
 
 interface ExtendCompletionItem {
   positions?: ReadonlyArray<number>;
@@ -35,7 +34,7 @@ function guessPrefix(
   if (prefixMap[startCharacter] != null) {
     return prefixMap[startCharacter];
   }
-  const prefix = byteSlice(pretext, startCharacter).trim();
+  const prefix = pretext.slice(startCharacter);
   const codes = getCharCodes(prefix);
   prefixMap[startCharacter] = [prefix, codes];
   return [prefix, codes];
@@ -44,8 +43,6 @@ function guessPrefix(
 function filterItems(pretext: string, items: CompletionItem[]) {
   const prefixMap: PrefixMap = {};
   const arr: ExtendCompletionItem[] = [];
-  // const len = prefix.length
-  // const codes = getCharCodes(prefix)
   for (let i = 0; i < items.length; i++) {
     const [prefix, codes] = guessPrefix(pretext, items[i], prefixMap);
     const emptyInput = prefix.length === 0;
@@ -55,7 +52,6 @@ function filterItems(pretext: string, items: CompletionItem[]) {
     };
     const { label } = item.originItem;
     const filterText = item.originItem.filterText ?? label;
-
     if (filterText.length < prefix.length) continue;
     if (!emptyInput) {
       let positions: ReadonlyArray<number> | undefined;
