@@ -166,11 +166,22 @@
   "Call NODE EPC function METHOD and ARGS synchronously."
   (epc:call-sync lsp-rocks-process (read method) args))
 
+(defun lsp-rocks-shutdown-buffers ()
+  (interactive)
+  (let ((files (lsp-rocks-call-sync "get-all-opened-files")))
+    (message "files %s" files)
+    (cl-dolist (file files)
+      (when-let* ((buf (get-file-buffer file))
+                   (buffer-live-p buf))
+        (with-current-buffer buf
+          (lsp-rocks-mode -1))))))
+
 (defun lsp-rocks-restart-process ()
   "Stop and restart LSP-ROCKS process."
   (interactive)
   (setq lsp-rocks-is-starting nil)
-
+  (lsp-rocks-shutdown-buffers)
+  ;; TODO Find all opened buffer and disable it's lsp-rocks-mode
   (lsp-rocks-kill-process)
   (lsp-rocks-start-process)
   (message "[LSP-ROCKS] Process restarted."))
@@ -554,62 +565,62 @@ The method uses `replace-buffer-contents'."
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item candidate))
-          (resolved-item (get-text-property 0 'resolved-item candidate))
-          (source (plist-get completion-item :source)))
+         (resolved-item (get-text-property 0 'resolved-item candidate))
+         (source (plist-get completion-item :source)))
     (if (equal source "ts-ls")
-      (if resolved-item
-        (lsp-rocks--compoany-post-completion-item resolved-item candidate)
-        (deferred:$
-          (lsp-rocks--async-resolve (plist-get completion-item :no))
-          (deferred:nextc it
-            (lambda (resolved)
-              (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
-              (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate)))))
+        (if resolved-item
+            (lsp-rocks--compoany-post-completion-item resolved-item candidate)
+          (deferred:$
+           (lsp-rocks--async-resolve (plist-get completion-item :no))
+           (deferred:nextc it
+                           (lambda (resolved)
+                             (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
+                             (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate)))))
       (lsp-rocks--compoany-post-completion-item (or resolved-item completion-item) candidate))))
 
 (defun lsp-rocks--compoany-post-completion-item (item candidate)
   "Complete ITEM."
   (let* ((label (plist-get item :label))
-          (insertText (plist-get item :insertText))
-          ;; 1 = plaintext, 2 = snippet
-          (insertTextFormat (plist-get item :insertTextFormat))
-          (textEdit (plist-get item :textEdit))
-          (additionalTextEdits (plist-get item :additionalTextEdits))
-          (startPoint (- (point) (length candidate)))
-          (insertTextMode (plist-get item :insertTextMode)))
+         (insertText (plist-get item :insertText))
+         ;; 1 = plaintext, 2 = snippet
+         (insertTextFormat (plist-get item :insertTextFormat))
+         (textEdit (plist-get item :textEdit))
+         (additionalTextEdits (plist-get item :additionalTextEdits))
+         (startPoint (- (point) (length candidate)))
+         (insertTextMode (plist-get item :insertTextMode)))
     (delete-region startPoint (point))
     (cond (textEdit
-            (insert lsp-rocks--last-prefix)
-            (lsp-rocks--apply-text-edit textEdit)
-            ;; (let ((range (plist-get textEdit :range))
-            ;;       (newText (plist-get textEdit :newText)))
-            ;;   (pcase-let ((`(,beg . ,end)
-            ;;                (lsp-rocks--range-region range)))
-            ;;     (delete-region beg end)
-            ;;     (goto-char beg)
-            ;;     (funcall (or snippet-fn #'insert) newText)))
-            )
-      ;; (snippet-fn
-      ;; A snippet should be inserted, but using plain
-      ;; `insertText'.  This requires us to delete the
-      ;; whole completion, since `insertText' is the full
-      ;; completion's text.
-      ;; (delete-region (- (point) (length candidate)) (point))
-      ;; (funcall snippet-fn (or insertText label)))
-      ((or insertText label)
-        ;; (delete-region (- (point) (length candidate)) (point))
-        (insert (or insertText label))))
+           (insert lsp-rocks--last-prefix)
+           (lsp-rocks--apply-text-edit textEdit)
+           ;; (let ((range (plist-get textEdit :range))
+           ;;       (newText (plist-get textEdit :newText)))
+           ;;   (pcase-let ((`(,beg . ,end)
+           ;;                (lsp-rocks--range-region range)))
+           ;;     (delete-region beg end)
+           ;;     (goto-char beg)
+           ;;     (funcall (or snippet-fn #'insert) newText)))
+           )
+          ;; (snippet-fn
+          ;; A snippet should be inserted, but using plain
+          ;; `insertText'.  This requires us to delete the
+          ;; whole completion, since `insertText' is the full
+          ;; completion's text.
+          ;; (delete-region (- (point) (length candidate)) (point))
+          ;; (funcall snippet-fn (or insertText label)))
+          ((or insertText label)
+           ;; (delete-region (- (point) (length candidate)) (point))
+           (insert (or insertText label))))
     (lsp-rocks--indent-lines startPoint (point) insertTextMode)
     (when (eq insertTextFormat 2)
       (lsp-rocks--expand-snippet (buffer-substring startPoint (point))
-        startPoint
-        (point)))
+                                 startPoint
+                                 (point)))
     ;; (message "additional--- %S %s" additionalTextEdits (get-text-property 0 'resolved-item candidate))
     (if (cl-plusp (length additionalTextEdits))
-      (lsp-rocks--apply-text-edits additionalTextEdits)
+        (lsp-rocks--apply-text-edits additionalTextEdits)
       (if-let ((resolved-item (get-text-property 0 'resolved-item candidate)))
-        (if-let (additionalTextEdits (plist-get resolved-item :additionalTextEdits))
-          (lsp-rocks--apply-text-edits additionalTextEdits))
+          (if-let (additionalTextEdits (plist-get resolved-item :additionalTextEdits))
+              (lsp-rocks--apply-text-edits additionalTextEdits))
         (message "Not resolved")))))
 
 (defun lsp-rocks--get-match-buffer-by-filepath (name)
@@ -664,10 +675,10 @@ File paths with spaces are only supported inside strings."
 ;;; request functions
 (defun lsp-rocks--open-params ()
   (list :textDocument
-    (list :uri buffer-file-name
-      :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
-      :version 0
-      :text (buffer-substring-no-properties (point-min) (point-max)))))
+        (list :uri buffer-file-name
+              :languageId (lsp-rocks-get-language-for-file) ;;(string-replace "-mode" "" (symbol-name major-mode))
+              :version 0
+              :text (buffer-substring-no-properties (point-min) (point-max)))))
 
 (defun lsp-rocks--did-open ()
   (if buffer-file-name
@@ -719,8 +730,8 @@ File paths with spaces are only supported inside strings."
   (when-let ((id (lsp-rocks--request-id)))
     (puthash "completionItem/resolve" id lsp-rocks--recent-requests)
     (lsp-rocks-call-async "resolve"
-      (list :id id :cmd "completionItem/resolve" :params
-        (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))))
+                          (list :id id :cmd "completionItem/resolve" :params
+                                (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))))
 
 (defun lsp-rocks-find-definition ()
   "Find definition."
@@ -973,13 +984,13 @@ relied upon."
   "Return ITEM's kind."
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item item))
          (kind (and completion-item (plist-get completion-item :kind)))
-          (detail (and completion-item (plist-get completion-item :detail)))
-          (label-detail (and completion-item (plist-get completion-item :labelDetails))))
+         (detail (and completion-item (plist-get completion-item :detail)))
+         (label-detail (and completion-item (plist-get completion-item :labelDetails))))
     (concat
      (when detail
        (concat " " (s-replace "\r" "" detail)))
-      (when-let (description (and label-detail (plist-get label-detail :description)))
-        (format " %s" description))
+     (when-let (description (and label-detail (plist-get label-detail :description)))
+       (format " %s" description))
      (when-let ((kind-name (alist-get kind lsp-rocks--kind->symbol)))
        (format " (%s)" kind-name)))))
 
@@ -1137,28 +1148,28 @@ Doubles as an indicator of snippet support."
 (defun lsp-rocks--process-find-definition (locations)
   ""
   (when-let* ((locs (cl-mapcar (lambda (it)
-                          (let* ((filepath (plist-get it :uri))
-                                 (range (plist-get it :range))
-                                 (start (plist-get range :start))
-                                 (end (plist-get range :end))
-                                 (start-line (plist-get start :line))
-                                 (start-column (plist-get start :character))
-                                 (end-line (plist-get end :line))
-                                 (end-column (plist-get end :character)))
-                            (save-excursion
-                              (save-restriction
-                                (widen)
-                                (let* ((beg (lsp-rocks--position-point start))
-                                       (end (lsp-rocks--position-point end))
-                                       (bol (progn (goto-char beg) (line-beginning-position)))
-                                       (summary (buffer-substring bol (line-end-position)))
-                                       (hi-beg (- beg bol))
-                                       (hi-end (- (min (line-end-position) end) bol)))
-                                  (when summary
-                                    (add-face-text-property hi-beg hi-end 'xref-match t summary))
-                                  (xref-make summary
-                                             (xref-make-file-location filepath (1+ start-line) start-column)))))))
-                        locations)))
+                                 (let* ((filepath (plist-get it :uri))
+                                        (range (plist-get it :range))
+                                        (start (plist-get range :start))
+                                        (end (plist-get range :end))
+                                        (start-line (plist-get start :line))
+                                        (start-column (plist-get start :character))
+                                        (end-line (plist-get end :line))
+                                        (end-column (plist-get end :character)))
+                                   (save-excursion
+                                     (save-restriction
+                                       (widen)
+                                       (let* ((beg (lsp-rocks--position-point start))
+                                              (end (lsp-rocks--position-point end))
+                                              (bol (progn (goto-char beg) (line-beginning-position)))
+                                              (summary (buffer-substring bol (line-end-position)))
+                                              (hi-beg (- beg bol))
+                                              (hi-end (- (min (line-end-position) end) bol)))
+                                         (when summary
+                                           (add-face-text-property hi-beg hi-end 'xref-match t summary))
+                                         (xref-make summary
+                                                    (xref-make-file-location filepath (1+ start-line) start-column)))))))
+                               locations)))
     (lsp-rocks-show-xrefs locs nil nil)))
 
 (defface lsp-rocks-hover-posframe

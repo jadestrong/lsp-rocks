@@ -1,1 +1,1 @@
-export const filePathToProject = new Map<string, string>();
+export const fileUriToProject = new Map<string, string>();

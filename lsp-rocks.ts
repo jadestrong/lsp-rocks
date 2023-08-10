@@ -14,24 +14,20 @@ import { importLangServers } from './utils/importLangServers';
 import executable from './utils/executable';
 import languageIdMap from './constants/languageIdMap';
 import { CompletionItem } from 'vscode-languageserver-protocol';
-import { filePathToProject } from './project';
+import { fileUriToProject } from './project';
 import diagnosticCenter from './diagnostics';
-// import DiagnosticCenter from './diagnostics';
 
 export class LspRocks {
   private _server: RPCServer | null;
 
-  // readonly filePathToProject: Map<string, string> = new Map();
   readonly _clients: Map<string, LanguageClient[] | undefined>;
 
   readonly recentRequests: Map<string, any>;
   configs: ServerConfig[] = [];
-  // diagnosticCenter: DiagnosticCenter
 
   constructor() {
     this._clients = new Map();
     this.recentRequests = new Map();
-    // this.diagnosticCenter = new DiagnosticCenter(this.filePathToProject);
   }
 
   public async start() {
@@ -85,7 +81,7 @@ export class LspRocks {
       logger.info({
         cmd: message.cmd,
         message,
-      })
+      });
       this.recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
       return response?.data;
@@ -102,6 +98,13 @@ export class LspRocks {
         message_emacs('No language server(s) is associated with this buffer.');
       }
       await tsls?.restart();
+    });
+
+    // TODO optimize
+    this._server?.defineMethod('get-all-opened-files', () => {
+      return Array.from(fileUriToProject.keys()).map(uri => {
+        return URI.parse(uri).fsPath;
+      });
     });
 
     this.configs = await importLangServers();
@@ -122,13 +125,13 @@ export class LspRocks {
     const {
       textDocument: { uri },
     } = params;
-    let projectRoot = filePathToProject.get(uri);
+    let projectRoot = fileUriToProject.get(uri);
 
     if (!projectRoot) {
       projectRoot = await get_emacs_func_result<string>(
         'lsp-rocks--suggest-project-root',
       );
-      filePathToProject.set(uri, projectRoot);
+      fileUriToProject.set(uri, projectRoot);
     }
 
     const clients = await this.ensureClient(projectRoot, filepath);

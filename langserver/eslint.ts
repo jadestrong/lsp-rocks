@@ -5,13 +5,13 @@ const eslint: ServerConfig = {
   name: 'eslint',
   args: ['--stdio'],
   settings: {},
-  configuration(items, filePathToProject) {
+  configuration(items, fileUriToProject) {
     return items.map(item => {
       const { scopeUri } = item;
       if (!scopeUri) {
         return null;
       }
-      const projectRoot = filePathToProject.get(scopeUri);
+      const projectRoot = fileUriToProject.get(scopeUri);
       if (!projectRoot) {
         return null;
       }

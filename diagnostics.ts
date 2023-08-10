@@ -3,7 +3,7 @@ import {
   type Diagnostic,
 } from 'vscode-languageserver-protocol';
 import { URI } from 'vscode-uri';
-import { filePathToProject } from './project';
+import { fileUriToProject } from './project';
 import { eval_in_emacs } from './epc-utils';
 
 interface DiagnosticItem {
@@ -17,7 +17,7 @@ class DiagnosticCenter {
 
   getDiagnosticsByFilePath(filePath: string): Diagnostic[] {
     const uri = URI.file(filePath).toString();
-    const projectRoot = filePathToProject.get(uri);
+    const projectRoot = fileUriToProject.get(uri);
     if (!projectRoot) {
       return [];
     }

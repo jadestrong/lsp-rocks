@@ -69,7 +69,7 @@ import Connection from './connection';
 import data2String from './utils/data2String';
 import * as Is from './util';
 import methodRequirements from './constants/methodRequirements';
-import { filePathToProject } from './project';
+import { fileUriToProject } from './project';
 import diagnosticCenter from './diagnostics';
 import { DocumentFormatingFeature } from './features/format';
 
@@ -88,7 +88,6 @@ export class LanguageClient {
   readonly logger: Logger;
   capabilities: ServerCapabilities;
   serverConfig: ServerConfig | undefined;
-  // filePathToProject: Map<string, string> = new Map();
   private features: DynamicFeature<any>[];
   // 记录 client/registerCapability 返回注册的能力
   private registeredCapabilities = new Map<
@@ -108,16 +107,10 @@ export class LanguageClient {
   labelCompletionMap = new Map<string, EmacsCompletionItem>();
   // completionItems = new Array<CompletionItem>();
 
-  constructor(
-    name: string,
-    projectRoot: string,
-    serverConfig: ServerConfig,
-    // filePathToProject: Map<string, string>,
-  ) {
+  constructor(name: string, projectRoot: string, serverConfig: ServerConfig) {
     this.name = name;
     this.projectRoot = projectRoot;
     this.serverConfig = serverConfig;
-    // this.filePathToProject = filePathToProject;
     this.features = [];
     this.dynamicFeatures = new Map();
     this.logger = createLogger(this.name);
@@ -324,7 +317,7 @@ export class LanguageClient {
       connection.onRequest(ConfigurationRequest.type, params => {
         const { serverConfig } = this;
         return serverConfig?.configuration
-          ? serverConfig.configuration(params.items, filePathToProject)
+          ? serverConfig.configuration(params.items, fileUriToProject)
           : [serverConfig?.initializeOptions];
       });
 
