@@ -161,6 +161,7 @@ const typescript: ServerConfig = {
     },
   },
   initializedFn: result => {
+    result.capabilities.documentFormattingProvider = false;
     // send didChangeConfiguration notify
     return result;
   },

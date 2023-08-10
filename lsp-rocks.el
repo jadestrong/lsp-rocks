@@ -27,6 +27,7 @@
 (require 'json)
 (require 'seq)
 (require 's)
+(require 'f)
 (require 'subr-x)
 (require 'lsp-rocks-xref)
 (require 'posframe)
@@ -681,8 +682,10 @@ File paths with spaces are only supported inside strings."
               :text (buffer-substring-no-properties (point-min) (point-max)))))
 
 (defun lsp-rocks--did-open ()
-  (if buffer-file-name
-      (lsp-rocks--request "textDocument/didOpen" (lsp-rocks--open-params))))
+  (when buffer-file-name
+    (when (not (f-exists? buffer-file-name))
+      (save-buffer))
+    (lsp-rocks--request "textDocument/didOpen" (lsp-rocks--open-params))))
 
 (defun lsp-rocks--did-close ()
   "Send textDocument/didClose notification."
