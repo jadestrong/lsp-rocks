@@ -18,8 +18,8 @@ import { logger } from '../logger';
 export interface EmacsCompletionParams extends CompletionParams {
   /* 当前输入所在行的文本 */
   line: string;
-  /** 当前输入时光标所在的列 */
-  column: number;
+  prefix: string;
+  startPoint: number;
 }
 
 /**
@@ -44,7 +44,7 @@ export class CompletionFeature extends RunnableDynamicFeature<
       return [];
     }
     this.client.labelCompletionMap.clear();
-    const { line, textDocument, position } = params;
+    const { line, prefix, startPoint, textDocument, position } = params;
 
     const pretext = line.slice(0, position.character);
     const triggerCharacter = this.client.triggerCharacters.find(triggerChar =>
@@ -78,8 +78,8 @@ export class CompletionFeature extends RunnableDynamicFeature<
       data: {
         pretext,
         items: resp.items.length,
-      }
-    })
+      },
+    });
     const completions = filterItems(pretext, resp.items).slice(
       0,
       this.max_completion_size,
@@ -90,7 +90,12 @@ export class CompletionFeature extends RunnableDynamicFeature<
         ...it,
         no,
         source: this.client.name,
+        start: startPoint,
+        end: startPoint + (it.label.length - prefix.length),
       };
+      if (item.detail && item.detail.length > 30) {
+        item.detail = `...${item.detail.slice(item.detail.length - 30)}`;
+      }
       this.client.labelCompletionMap.set(no, item);
       return item;
     });
@@ -160,12 +165,16 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
           value: detail,
         };
       } else if (typeof documentation === 'string') {
-        resp.documentation = `${detail}\n\n${documentation}`;
+        resp.documentation = `${detail}\r\n\r\n${documentation}`;
       } else {
         resp.documentation = {
           ...documentation,
-          value: `${detail}\n\n${documentation.value}`,
+          value: `${detail}\r\n\r\n${documentation.value}`,
         };
+      }
+
+      if (detail.length > 30) {
+        resp.detail = `...${detail.slice(detail.length - 30)}`;
       }
     }
     if (resp && resp.textEdit && InsertReplaceEdit.is(resp.textEdit)) {

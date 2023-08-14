@@ -131,10 +131,11 @@ export class LspRocks {
       projectRoot = await get_emacs_func_result<string>(
         'lsp-rocks--suggest-project-root',
       );
-      fileUriToProject.set(uri, projectRoot);
     }
 
     const clients = await this.ensureClient(projectRoot, filepath);
+    // NOTE 只有有相应的server的文件才记录
+    fileUriToProject.set(uri, projectRoot);
     if (!clients?.length) {
       message_emacs(`No client found for this project ${projectRoot}`);
       return;
@@ -221,37 +222,37 @@ export class LspRocks {
   }
 
   private async ensureClient(projectRoot: string, filePath: string) {
-    // find all support current file's config
-    // find workspace?
     const extension = path.extname(filePath);
     const languageId = languageIdMap[extension];
     if (!languageId) {
       throw new Error(`Not support current file type ${extension}.`);
     }
-    let clients = this._clients.get(projectRoot);
-    if (clients) {
-      return clients;
+    const cachedClients = this._clients.get(projectRoot) ?? [];
+    const cachedNames = cachedClients?.map(client => client.name);
+
+    const configs = this.findClients(filePath, projectRoot).filter(
+      config => !cachedNames.includes(config.name),
+    );
+
+    if (!configs.length) {
+      return cachedClients;
     }
 
-    const configs = this.findClients(filePath, projectRoot);
-    if (!configs.length) {
-      throw new Error(`No LSP server for ${filePath}.`);
-    }
-    // TODO logger.info
-    message_emacs(
-      `Found the following clients for ${filePath}: ${configs
-        .map(item => item.name)
-        .join('  ')}`,
-    );
-    clients = (
+    const newClients = (
       await Promise.all(
         configs.map(config =>
           this.createClient(config.name, projectRoot, config),
         ),
       )
     ).filter((client): client is LanguageClient => !!client);
-
+    const clients = [...cachedClients, ...newClients];
     this._clients.set(projectRoot, clients);
+
+    message_emacs(
+      `Found the following clients for ${filePath}: ${clients
+        .map(item => item.name)
+        .join('  ')}`,
+    );
     return clients;
   }
 

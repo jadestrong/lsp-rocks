@@ -40,5 +40,7 @@ declare global {
     no?: string;
     source?: string;
     resolving?: Promise<CompletionItem>;
+    start: number;
+    end: number;
   }
 }

@@ -167,6 +167,34 @@
   "Call NODE EPC function METHOD and ARGS synchronously."
   (epc:call-sync lsp-rocks-process (read method) args))
 
+(cl-defmacro lsp-rocks--shutdown (&rest body)
+  "Evaluate BODY after all files shutdown."
+  (declare (indent 1))
+  `(deferred:$
+     (deferred:$
+       (lsp-rocks-call-async "get-all-opened-files")
+       (deferred:nextc it
+         (lambda (files)
+           (cl-dolist (file files)
+             (when-let* ((buf (get-file-buffer file))
+                          (buffer-live-p buf))
+               (with-current-buffer buf
+                 (lsp-rocks-mode -1)))))))
+     (deferred:next it
+       (lambda ()
+         ,@body))))
+
+(defun lsp-rocks--restart-process ()
+  "Stop and restart LSP-ROCKS process."
+  (interactive)
+  (lsp-rocks--shutdown
+    (setq lsp-rocks-is-starting nil)
+    (lsp-rocks-shutdown-buffers)
+    ;; TODO Find all opened buffer and disable it's lsp-rocks-mode
+    (lsp-rocks-kill-process)
+    (lsp-rocks-start-process)
+    (message "[LSP-ROCKS] Process restarted.")))
+
 (defun lsp-rocks-shutdown-buffers ()
   (interactive)
   (let ((files (lsp-rocks-call-sync "get-all-opened-files")))
@@ -177,15 +205,40 @@
         (with-current-buffer buf
           (lsp-rocks-mode -1))))))
 
+(defun lsp-rocks--buffer-visible-p ()
+  "Return non nil if current buffer is visible."
+  (or (buffer-modified-p) (get-buffer-window nil t)))
+
+(defun lsp-rocks--init-if-visible ()
+  "Enable lsp-rocks-mode for the current buffer if the buffer is visible.
+Returns non nil if `lsp-rocks-mode' was enabled for the buffer."
+  (when (lsp-rocks--buffer-visible-p)
+    (remove-hook 'window-configuration-change-hook #'lsp-rocks--init-if-visible t)
+    (lsp-rocks-mode 1)
+    t))
+
 (defun lsp-rocks-restart-process ()
   "Stop and restart LSP-ROCKS process."
   (interactive)
   (setq lsp-rocks-is-starting nil)
-  (lsp-rocks-shutdown-buffers)
-  ;; TODO Find all opened buffer and disable it's lsp-rocks-mode
-  (lsp-rocks-kill-process)
-  (lsp-rocks-start-process)
-  (message "[LSP-ROCKS] Process restarted."))
+  (let ((files (lsp-rocks-call-sync "get-all-opened-files")))
+    (message "files %s" files)
+    (cl-dolist (file files)
+      (when-let* ((buf (get-file-buffer file))
+                   (buffer-live-p buf))
+        (with-current-buffer buf
+          (lsp-rocks-mode -1))))
+    ;; TODO Find all opened buffer and disable it's lsp-rocks-mode
+    (lsp-rocks-kill-process)
+    (lsp-rocks-start-process)
+    (message "[LSP-ROCKS] Process restarted.")
+    (cl-dolist (file files)
+      (run-with-idle-timer 0 nil (lambda ()
+                                   (when-let* ((buf (get-file-buffer file))
+                                                (buffer-live-p buf))
+                                     (with-current-buffer buf
+                                       (unless (lsp-rocks--init-if-visible)
+                                         (add-hook 'window-configuration-change-hook #'lsp-rocks--init-if-visible nil t)))))))))
 
 (defun lsp-rocks-start-process ()
   "Start LSP-ROCKS process if it isn't started."
@@ -196,7 +249,9 @@
     (setq lsp-rocks-is-starting nil)
     (setq lsp-rocks-is-started t)
     (lsp-rocks-register-internal-hooks)
-    (lsp-rocks--did-open)))
+    ;; (lsp-rocks--did-open)
+    (with-current-buffer
+      (revert-buffer))))
 
 (defvar lsp-rocks-stop-process-hook nil)
 
@@ -566,32 +621,40 @@ The method uses `replace-buffer-contents'."
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
   (let* ((completion-item (get-text-property 0 'lsp-rocks--item candidate))
-         (resolved-item (get-text-property 0 'resolved-item candidate))
-         (source (plist-get completion-item :source)))
+          (resolved-item (get-text-property 0 'resolved-item candidate))
+          (source (plist-get completion-item :source))
+          (marker (copy-marker (point) t)))
+    ;; (message "arround marker %s" (buffer-substring-no-properties (- marker 1) (min (+ marker 1) (point-max))))
     (if (equal source "ts-ls")
         (if resolved-item
-            (lsp-rocks--compoany-post-completion-item resolved-item candidate)
+            (lsp-rocks--compoany-post-completion-item resolved-item candidate marker)
           (deferred:$
            (lsp-rocks--async-resolve (plist-get completion-item :no))
            (deferred:nextc it
                            (lambda (resolved)
                              (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
-                             (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate)))))
-      (lsp-rocks--compoany-post-completion-item (or resolved-item completion-item) candidate))))
+                             (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate marker)))))
+      (lsp-rocks--compoany-post-completion-item (or resolved-item completion-item) candidate marker))))
 
-(defun lsp-rocks--compoany-post-completion-item (item candidate)
-  "Complete ITEM."
+(defun lsp-rocks--compoany-post-completion-item (item candidate marker)
+  "Complete CANDIDATE of ITEM from MARKER."
   (let* ((label (plist-get item :label))
-         (insertText (plist-get item :insertText))
-         ;; 1 = plaintext, 2 = snippet
-         (insertTextFormat (plist-get item :insertTextFormat))
-         (textEdit (plist-get item :textEdit))
-         (additionalTextEdits (plist-get item :additionalTextEdits))
-         (startPoint (- (point) (length candidate)))
-         (insertTextMode (plist-get item :insertTextMode)))
-    (delete-region startPoint (point))
+          (insertText (plist-get item :insertText))
+          ;; 1 = plaintext, 2 = snippet
+          (insertTextFormat (plist-get item :insertTextFormat))
+          (textEdit (plist-get item :textEdit))
+          (additionalTextEdits (plist-get item :additionalTextEdits))
+          (startPoint (- marker (length candidate)))
+          (insertTextMode (plist-get item :insertTextMode))
+          (start (plist-get item :start))
+          (end (plist-get item :end)))
+    (message "startpoint %s point %s marker %s prefix %s" startPoint (point) marker lsp-rocks--last-prefix)
+    (message "start %s end %s" start end)
+    (message "textEdit %s" textEdit)
+    ;; (delete-region startPoint marker)
     (cond (textEdit
-           (insert lsp-rocks--last-prefix)
+            (delete-region start end)
+           ;; (insert lsp-rocks--last-prefix)
            (lsp-rocks--apply-text-edit textEdit)
            ;; (let ((range (plist-get textEdit :range))
            ;;       (newText (plist-get textEdit :newText)))
@@ -609,7 +672,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
           ;; (delete-region (- (point) (length candidate)) (point))
           ;; (funcall snippet-fn (or insertText label)))
           ((or insertText label)
-           ;; (delete-region (- (point) (length candidate)) (point))
+           (delete-region (- end (length candidate)) end)
            (insert (or insertText label))))
     (lsp-rocks--indent-lines startPoint (point) insertTextMode)
     (when (eq insertTextFormat 2)
@@ -662,9 +725,10 @@ File paths with spaces are only supported inside strings."
     (interactive (company-begin-backend 'company-lsp-rocks))
     (prefix (lsp-rocks--get-prefix))
     (candidates (cons :async (lambda (callback)
+                               (message "here %s" (point))
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
-                               (lsp-rocks--completion))))
+                               (lsp-rocks--completion arg (point)))))
     (no-cache t)
     (sorted t)
     (annotation (lsp-rocks--candidate-kind arg))
@@ -716,10 +780,17 @@ File paths with spaces are only supported inside strings."
                       ;;         )
                       ))
 
-(defun lsp-rocks--completion ()
+(defun lsp-rocks--completion (prefix start-point)
+  (set-text-properties 0 (length prefix) nil prefix)
+  ;; (message "prefix %s start-point %s %s" prefix start-point `(:line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
+  ;;              :prefix ,prefix
+  ;;              ;; :startPoint ,start-point
+  ;;                                                              ))
   (lsp-rocks--request "textDocument/completion"
-                      (append `(:line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position)))
-                              (lsp-rocks--TextDocumentPosition))))
+    (append `(:line ,(buffer-substring-no-properties (line-beginning-position) (line-end-position))
+               :prefix ,prefix
+               :startPoint ,start-point)
+      (lsp-rocks--TextDocumentPosition))))
 
 (defun lsp-rocks--resolve (label)
   (lsp-rocks--request "completionItem/resolve"
@@ -1195,7 +1266,7 @@ Doubles as an indicator of snippet support."
     (let ((inhibit-message t))
       (setq-local markdown-fontify-code-blocks-natively t)
       (set-face-background 'markdown-code-face (face-attribute 'lsp-rocks-hover-posframe :background nil t))
-      (set-face-attribute 'markdown-code-face nil :height 130)
+      ;; (set-face-attribute 'markdown-code-face nil :height 230)
       (gfm-view-mode)))
   (read-only-mode 0)
   (prettify-symbols-mode 1)
@@ -1216,7 +1287,7 @@ Doubles as an indicator of snippet support."
                    :max-width 60
                    :position (point)
                    :accept-focus nil
-                   :lines-truncate t
+                   ;; :lines-truncate t
                    :vertical-scroll-bars t
                    :internal-border-width 10
                    :poshandler #'posframe-poshandler-point-bottom-left-corner-upward
