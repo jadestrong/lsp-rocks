@@ -19,9 +19,6 @@ import {
   ProtocolRequestType0,
   RequestType,
   RequestType0,
-  SemanticTokensDeltaRequest,
-  SemanticTokensRangeRequest,
-  SemanticTokensRequest,
   ServerCapabilities,
   ShutdownRequest,
   TextDocumentSyncKind,
@@ -39,7 +36,6 @@ import {
   ConfigurationRequest,
   PublishDiagnosticsNotification,
   DidChangeConfigurationNotification,
-  CompletionItem,
 } from 'vscode-languageserver-protocol';
 import { MessageSignature, RAL, ResponseError } from 'vscode-jsonrpc/node';
 import { Logger } from 'pino';
@@ -99,6 +95,7 @@ export class LanguageClient {
   private _state: ClientState;
   private _onStart: Promise<void> | undefined;
   private _onStop: Promise<void> | undefined;
+  private restartTimes = 0;
 
   private dynamicFeatures: Map<string, DynamicFeature<any>>;
 
@@ -289,6 +286,17 @@ export class LanguageClient {
         {},
         this.logger,
       );
+
+      connection.onClose(() => {
+        this.error('close exception', {
+          msg: `${command} closeHandler`,
+        });
+        if (this.restartTimes < 3) {
+          this.restartTimes++;
+          this.restart();
+        }
+      });
+
       connection.onNotification(LogMessageNotification.type, message => {
         switch (message.type) {
           case MessageType.Error:
@@ -712,14 +720,9 @@ export class LanguageClient {
     const msg = `[Error  - ${new Date().toLocaleTimeString()}] ${
       message || data2String(data)
     }`;
+    message_emacs(msg);
     logger.info(msg);
   }
-
-  private static RequestsToCancelOnContentModified: Set<string> = new Set([
-    SemanticTokensRequest.method,
-    SemanticTokensRangeRequest.method,
-    SemanticTokensDeltaRequest.method,
-  ]);
 
   public checkCapabilityForMethod(method: string | MessageSignature) {
     const methodName = Is.toMethod(method);

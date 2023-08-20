@@ -100,12 +100,6 @@ class Connection {
         data: err,
       });
     });
-    connection.onClose(() => {
-      message_emacs('closeHandler');
-      commonLogger.error({
-        msg: `${serverOptions.command} closeHandler`,
-      });
-    });
 
     connection.trace(Trace.Verbose, {
       log(messageOrDataObject: string | any, data?: string) {

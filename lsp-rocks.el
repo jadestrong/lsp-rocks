@@ -655,7 +655,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (cond (textEdit
             (delete-region start end)
            ;; (insert lsp-rocks--last-prefix)
-           (lsp-rocks--apply-text-edit textEdit)
+            (lsp-rocks--apply-text-edit textEdit)
            ;; (let ((range (plist-get textEdit :range))
            ;;       (newText (plist-get textEdit :newText)))
            ;;   (pcase-let ((`(,beg . ,end)
@@ -671,7 +671,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
           ;; completion's text.
           ;; (delete-region (- (point) (length candidate)) (point))
           ;; (funcall snippet-fn (or insertText label)))
-          ((or insertText label)
+          (insertText
            (delete-region (- end (length candidate)) end)
            (insert (or insertText label))))
     (lsp-rocks--indent-lines startPoint (point) insertTextMode)
@@ -728,7 +728,7 @@ File paths with spaces are only supported inside strings."
                                (message "here %s" (point))
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
-                               (lsp-rocks--completion arg (point)))))
+                               (lsp-rocks--completion arg (point))))) ;; (or (cl-first (bounds-of-thing-at-point 'symbol)) (point))
     (no-cache t)
     (sorted t)
     (annotation (lsp-rocks--candidate-kind arg))

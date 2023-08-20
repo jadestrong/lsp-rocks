@@ -134,12 +134,12 @@ export class LspRocks {
     }
 
     const clients = await this.ensureClient(projectRoot, filepath);
-    // NOTE 只有有相应的server的文件才记录
-    fileUriToProject.set(uri, projectRoot);
     if (!clients?.length) {
       message_emacs(`No client found for this project ${projectRoot}`);
       return;
     }
+    // NOTE 只有有相应的server的文件才记录
+    fileUriToProject.set(uri, projectRoot);
 
     if (
       this.recentRequests.get(req.cmd) != req.id &&
@@ -170,9 +170,8 @@ export class LspRocks {
       const [client] = clients.filter(item =>
         item.checkCapabilityForMethod(req.cmd),
       );
-      logger.debug({
-        msg: 'Did find a client?',
-        name: client?.name,
+      logger.debug('Did find a client?', {
+        msg: client?.name,
       });
       if (client) {
         data = await client.on(req.cmd, req.params);
