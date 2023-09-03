@@ -26,6 +26,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'seq)
+(require 'pulse)
 (require 's)
 (require 'f)
 (require 'subr-x)
@@ -33,7 +34,7 @@
 (require 'posframe)
 (require 'markdown-mode)
 (require 'company)
-(require 'epc)
+(require 'lsp-rocks-epc)
 (require 'yasnippet nil t)
 (require 'flycheck)
 
@@ -59,6 +60,7 @@
 (defvar lsp-rocks-node-file (expand-file-name "cli.ts" (if load-file-name
                                                            (file-name-directory load-file-name)
                                                          default-directory)))
+;; (defvar lsp-rocks-node-file "/Users/bytedance/.doom.d/extensions/lsp-rocks/lib/cli.js")
 (defun lsp-rocks--is-dark-theme ()
   "Return t if the current Emacs theme is a dark theme."
   (eq (frame-parameter nil 'background-mode) 'dark))
@@ -75,6 +77,11 @@
        (with-current-buffer buffer
          ,@body)
        (cl-return))))
+
+(cl-defmacro lsp-rocks--when-live-buffer (buf &rest body)
+  "Check BUF live, then do BODY in it." (declare (indent 1) (debug t))
+  (let ((b (cl-gensym)))
+    `(let ((,b ,buf)) (if (buffer-live-p ,b) (with-current-buffer ,b ,@body)))))
 
 (defun lsp-rocks--get-emacs-func-result-func (sexp-string)
   "Eval SEXP-STRING, and return the result."
@@ -111,6 +118,11 @@
   :type 'string
   :group 'lsp-rocks)
 
+(defcustom lsp-rocks--send-changes-idle-time 0.5
+  "Don't tell server of changes before Emacs's been idle for this many seconds."
+  :group 'lsp-rocks
+  :type 'number)
+
 (defun lsp-rocks--user-emacs-directory ()
   "Get lang server with project path, file path or file extension."
   (expand-file-name user-emacs-directory))
@@ -121,15 +133,20 @@
 
 (defun lsp-rocks--start-epc ()
   "Function to start the EPC."
-  (unless (epc:live-p lsp-rocks-process)
-    (setq lsp-rocks-process (epc:start-epc
+  (unless (lsp-rocks-epc--live-p lsp-rocks-process)
+    (setq lsp-rocks-process (lsp-rocks-epc--start-epc
                              lsp-rocks-node-command
-                             (list lsp-rocks-node-file)))
-    (epc:define-method lsp-rocks-process 'eval-in-emacs 'lsp-rocks--eval-in-emacs-func)
-    (epc:define-method lsp-rocks-process 'get-emacs-var 'lsp-rocks--get-emacs-var-func)
-    (epc:define-method lsp-rocks-process 'get-emacs-vars 'lsp-rocks--get-emacs-vars-func)
-    (epc:define-method lsp-rocks-process 'get-user-emacs-directory 'lsp-rocks--user-emacs-directory)
-    (epc:define-method lsp-rocks-process 'get-emacs-func-result 'lsp-rocks--get-emacs-func-result-func))
+                                (list lsp-rocks-node-file)
+                             ;; (append
+                             ;;   (list "-r" "ts-node/register")
+                             ;;   (list "--prof")
+                             ;;   (list lsp-rocks-node-file))
+                              ))
+    (lsp-rocks-epc--define-method lsp-rocks-process 'eval-in-emacs 'lsp-rocks--eval-in-emacs-func)
+    (lsp-rocks-epc--define-method lsp-rocks-process 'get-emacs-var 'lsp-rocks--get-emacs-var-func)
+    (lsp-rocks-epc--define-method lsp-rocks-process 'get-emacs-vars 'lsp-rocks--get-emacs-vars-func)
+    (lsp-rocks-epc--define-method lsp-rocks-process 'get-user-emacs-directory 'lsp-rocks--user-emacs-directory)
+    (lsp-rocks-epc--define-method lsp-rocks-process 'get-emacs-func-result 'lsp-rocks--get-emacs-func-result-func))
   lsp-rocks-process)
 
 (defun lsp-rocks--toggle-trace-io ()
@@ -155,9 +172,9 @@
 
 (defun lsp-rocks-call-async (method &rest args)
   "Call NODE EPC function METHOD and ARGS asynchronously."
-  (if (epc:live-p lsp-rocks-process)
+  (if (lsp-rocks-epc--live-p lsp-rocks-process)
       (deferred:$
-       (epc:call-deferred lsp-rocks-process (read method) args))
+       (lsp-rocks-epc--call-deferred lsp-rocks-process (read method) args))
     ;; (error "[MD-PREVIEW] lsp-rocks-process not live!")
     (setq lsp-rocks-first-call-method method)
     (setq lsp-rocks-first-call-args args)
@@ -165,7 +182,7 @@
 
 (defun lsp-rocks-call-sync (method &rest args)
   "Call NODE EPC function METHOD and ARGS synchronously."
-  (epc:call-sync lsp-rocks-process (read method) args))
+  (lsp-rocks-epc--call-sync lsp-rocks-process (read method) args))
 
 (cl-defmacro lsp-rocks--shutdown (&rest body)
   "Evaluate BODY after all files shutdown."
@@ -187,13 +204,15 @@
 (defun lsp-rocks--restart-process ()
   "Stop and restart LSP-ROCKS process."
   (interactive)
-  (lsp-rocks--shutdown
-    (setq lsp-rocks-is-starting nil)
-    (lsp-rocks-shutdown-buffers)
-    ;; TODO Find all opened buffer and disable it's lsp-rocks-mode
-    (lsp-rocks-kill-process)
-    (lsp-rocks-start-process)
-    (message "[LSP-ROCKS] Process restarted.")))
+  (setq lsp-rocks-is-starting nil)
+  (lsp-rocks-shutdown-buffers)
+  ;; TODO Find all opened buffer and disable it's lsp-rocks-mode
+  (lsp-rocks-kill-process)
+  (lsp-rocks-start-process)
+  (message "[LSP-ROCKS] Process restarted.")
+  ;; (lsp-rocks--shutdown
+  ;;   )
+  )
 
 (defun lsp-rocks-shutdown-buffers ()
   (interactive)
@@ -243,7 +262,7 @@ Returns non nil if `lsp-rocks-mode' was enabled for the buffer."
 (defun lsp-rocks-start-process ()
   "Start LSP-ROCKS process if it isn't started."
   (setq lsp-rocks-is-starting t)
-  (unless (epc:live-p lsp-rocks-process)
+  (unless (lsp-rocks-epc--live-p lsp-rocks-process)
     (lsp-rocks--start-epc)
     (message "[LSP-ROCKS] EPC Server started successly.")
     (setq lsp-rocks-is-starting nil)
@@ -269,11 +288,11 @@ Returns non nil if `lsp-rocks-mode' was enabled for the buffer."
 
 (defun lsp-rocks--kill-node-process ()
   "Kill LSP-ROCKS background python process."
-  (when (epc:live-p lsp-rocks-process)
+  (when (lsp-rocks-epc--live-p lsp-rocks-process)
     ;; Cleanup before exit LSP-ROCKS server process.
     (lsp-rocks-call-async "cleanup")
     ;; Delete LSP-ROCKS server process.
-    (epc:stop-epc lsp-rocks-process)
+    (lsp-rocks-epc--stop-epc lsp-rocks-process)
     ;; Kill *lsp-rocks* buffer.
     (when (get-buffer lsp-rocks-name)
       (kill-buffer lsp-rocks-name))
@@ -338,8 +357,12 @@ Setting this to nil or 0 will turn off the indicator."
 (defvar lsp-rocks--company-callback nil
   "Company callback.")
 
+(defvar-local lsp-rocks--completion-trigger-characters nil
+  "Completion trigger characters.")
+
 (defvar-local lsp-rocks-diagnostics--flycheck-enabled nil
-  "True when lsp-rocks diagnostics flycheck integration has been enabled in this buffer.")
+  "True when lsp-rocks diagnostics flycheck integration
+ has been enabled in this buffer.")
 
 (defvar-local lsp-rocks-diagnostics--flycheck-checker nil
   "The value of flycheck-checker before lsp-rocks diagnostics was activated.")
@@ -628,12 +651,17 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (if (equal source "ts-ls")
         (if resolved-item
             (lsp-rocks--compoany-post-completion-item resolved-item candidate marker)
-          (deferred:$
-           (lsp-rocks--async-resolve (plist-get completion-item :no))
-           (deferred:nextc it
-                           (lambda (resolved)
-                             (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
-                             (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate marker)))))
+          (let ((resolved (lsp-rocks--sync-resolve (plist-get completion-item :no))))
+            ;; (message "resolved %s" resolved)
+            (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
+            (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate marker))
+          ;; (deferred:$
+          ;;  (lsp-rocks--async-resolve (plist-get completion-item :no))
+          ;;  (deferred:nextc it
+          ;;                  (lambda (resolved)
+          ;;                    (put-text-property 0 (length candidate) 'resolved-item resolved candidate)
+          ;;                    (lsp-rocks--compoany-post-completion-item (or resolved completion-item) candidate marker))))
+          )
       (lsp-rocks--compoany-post-completion-item (or resolved-item completion-item) candidate marker))))
 
 (defun lsp-rocks--compoany-post-completion-item (item candidate marker)
@@ -648,9 +676,9 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
           (insertTextMode (plist-get item :insertTextMode))
           (start (plist-get item :start))
           (end (plist-get item :end)))
-    (message "startpoint %s point %s marker %s prefix %s" startPoint (point) marker lsp-rocks--last-prefix)
-    (message "start %s end %s" start end)
-    (message "textEdit %s" textEdit)
+    ;; (message "startpoint %s point %s marker %s prefix %s" startPoint (point) marker lsp-rocks--last-prefix)
+    ;; (message "start %s end %s" start end)
+    ;; (message "textEdit %s" textEdit)
     ;; (delete-region startPoint marker)
     (cond (textEdit
             (delete-region start end)
@@ -716,7 +744,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
         (cons (company-grab-symbol) t)
       (company-grab-symbol))))
 
-(defun company-lsp-rocks (command &optional arg &rest ignored)
+(defun company-lsp-rocks (command &optional arg &rest _ignored)
   "`company-mode' completion backend existing file names.
 Completions works for proper absolute and relative files paths.
 File paths with spaces are only supported inside strings."
@@ -725,7 +753,6 @@ File paths with spaces are only supported inside strings."
     (interactive (company-begin-backend 'company-lsp-rocks))
     (prefix (lsp-rocks--get-prefix))
     (candidates (cons :async (lambda (callback)
-                               (message "here %s" (point))
                                (setq lsp-rocks--company-callback callback
                                      lsp-rocks--last-prefix arg)
                                (lsp-rocks--completion arg (point))))) ;; (or (cl-first (bounds-of-thing-at-point 'symbol)) (point))
@@ -749,15 +776,15 @@ File paths with spaces are only supported inside strings."
   (when buffer-file-name
     (when (not (f-exists? buffer-file-name))
       (save-buffer))
-    (lsp-rocks--request "textDocument/didOpen" (lsp-rocks--open-params))))
+    (lsp-rocks--notice "textDocument/didOpen" (lsp-rocks--open-params))))
 
 (defun lsp-rocks--did-close ()
   "Send textDocument/didClose notification."
-  (lsp-rocks--request "textDocument/didClose" (lsp-rocks--TextDocumentIdentifier)))
+  (lsp-rocks--notice "textDocument/didClose" (lsp-rocks--TextDocumentIdentifier)))
 
 (defun lsp-rocks--did-change (begin end len)
   "Send textDocument/didChange notification."
-  (lsp-rocks--request "textDocument/didChange"
+  (lsp-rocks--notice "textDocument/didChange"
                       (list :textDocument
                             (list :uri buffer-file-name :version lsp-rocks--current-file-version)
                             :contentChanges
@@ -768,13 +795,13 @@ File paths with spaces are only supported inside strings."
 
 (defun lsp-rocks--will-save ()
   "Send textDocument/willSave notification."
-  (lsp-rocks--request "textDocument/willSave"
+  (lsp-rocks--notice "textDocument/willSave"
                       ;; 1 Manual, 2 AfterDelay, 3 FocusOut
                       (append '(:reason 1) (lsp-rocks--TextDocumentIdentifier))))
 
 (defun lsp-rocks--did-save ()
   "Send textDocument/didSave notification."
-  (lsp-rocks--request "textDocument/didSave"
+  (lsp-rocks--notice "textDocument/didSave"
                       (lsp-rocks--TextDocumentIdentifier)
                       ;; (append `(:text ,(buffer-substring-no-properties (point-min) (point-max)))
                       ;;         )
@@ -797,6 +824,7 @@ File paths with spaces are only supported inside strings."
                       (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))
 
 (defun lsp-rocks--sync-resolve (label)
+  ;; (sit-for 0.01)
   (lsp-rocks--sync "completionItem/resolve"
                    (append (list :label label) (lsp-rocks--TextDocumentIdentifier))))
 
@@ -1177,22 +1205,22 @@ Doubles as an indicator of snippet support."
   (list (propertize (or (thing-at-point 'symbol) "")
                     'identifier-at-point t)))
 
-(cl-defmethod xref-backend-definitions ((_backend (eql xref-lsp-rocks)) identifier callback)
+(cl-defmethod xref-backend-definitions ((_backend (eql xref-lsp-rocks)) _identifier callback)
   (save-excursion
     (setq lsp-rocks--xref-callback callback)
     (lsp-rocks-find-definition)))
 
-(cl-defmethod xref-backend-references ((_backend (eql xref-lsp-rocks)) identifier callback)
+(cl-defmethod xref-backend-references ((_backend (eql xref-lsp-rocks)) _identifier callback)
   (save-excursion
     (setq lsp-rocks--xref-callback callback)
     (lsp-rocks-find-references)))
 
-(cl-defmethod xref-backend-implementations ((_backend (eql xref-lsp-rocks)) identifier callback)
+(cl-defmethod xref-backend-implementations ((_backend (eql xref-lsp-rocks)) _identifier callback)
   (save-excursion
     (setq lsp-rocks--xref-callback callback)
     (lsp-rocks-find-implementations)))
 
-(cl-defmethod xref-backend-type-definitions ((_backend (eql xref-lsp-rocks)) identifier callback)
+(cl-defmethod xref-backend-type-definitions ((_backend (eql xref-lsp-rocks)) _identifier callback)
   (save-excursion
     (setq lsp-rocks--xref-callback callback)
     (lsp-rocks-find-type-definition)))
@@ -1228,8 +1256,8 @@ Doubles as an indicator of snippet support."
                                         (end (plist-get range :end))
                                         (start-line (plist-get start :line))
                                         (start-column (plist-get start :character))
-                                        (end-line (plist-get end :line))
-                                        (end-column (plist-get end :character)))
+                                        (_end-line (plist-get end :line))
+                                        (_end-column (plist-get end :character)))
                                    (save-excursion
                                      (save-restriction
                                        (widen)
@@ -1329,8 +1357,8 @@ Doubles as an indicator of snippet support."
          (start (plist-get range :start))
          (end (plist-get range :end))
          (placeholder (plist-get data :placeholder))
-         (start-point (lsp-rocks--lsp-position-to-point start))
-         (end-point (lsp-rocks--lsp-position-to-point end)))
+         (start-point (lsp-rocks--position-point start))
+         (end-point (lsp-rocks--position-point end)))
     (setq-local lsp-rocks--prepare-result
                 (cons (cons start-point end-point)
                       (if (string-empty-p placeholder) nil placeholder)))
@@ -1390,9 +1418,15 @@ Doubles as an indicator of snippet support."
 
 (defun lsp-rocks--request (cmd &optional params)
   "Send a message with given CMD and PARAMS."
+  (lsp-rocks--send-did-change)
   (when-let ((id (lsp-rocks--request-id)))
     (puthash cmd id lsp-rocks--recent-requests)
     (lsp-rocks-call-async "message" (list :id id :cmd cmd :params params))))
+
+(defun lsp-rocks--notice (cmd &optional params)
+  "Send a notice message with given CMD and PARAMS."
+  (when-let ((id (lsp-rocks--request-id)))
+    (lsp-rocks-epc--notice lsp-rocks-process 'message (list (list :id id :cmd cmd :params params)))))
 
 (defun lsp-rocks--sync (cmd &optional params)
   "Send a message with given CMD and PARAMS synchronously."
@@ -1468,17 +1502,77 @@ Doubles as an indicator of snippet support."
   (if (= 0 n) ""
     (concat (lsp-rocks--random-alnum) (lsp-rocks--random-string (1- n)))))
 
-(defun lsp-rocks--before-change (begin end)
-  (setq-local lsp-rocks--before-change-begin-pos (lsp-rocks--point-position begin))
-  (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end)))
+(defvar-local lsp-rocks--recent-changes nil
+  "Recent buffer changes as collected by `lsp-rocks--before-change'.")
+(defvar-local lsp-rocks--change-idle-timer nil
+  "Idle timer for didChange signals.")
 
-(defun lsp-rocks--after-change (begin end len)
-  (save-match-data
-    (let ((inhibit-quit t))
-      (when (not revert-buffer-in-progress-p)
-        (setq lsp-rocks--current-file-version (1+ lsp-rocks--current-file-version))
-        (lsp-rocks--did-change begin end len)
-        (lsp-rocks--signature-help t 3 nil)))))
+(defun lsp-rocks--before-change (beg end)
+  "Hook onto `before-change-functions' with BEG and END."
+  (when (listp lsp-rocks--recent-changes)
+    (push `(,(lsp-rocks--point-position beg)
+             ,(lsp-rocks--point-position end)
+             (,beg . ,(copy-marker beg nil))
+             (,end . ,(copy-marker end t)))
+      lsp-rocks--recent-changes)))
+
+(defun lsp-rocks--after-change (beg end pre-change-length)
+  "Hook onto `after-change-functions'.
+Records BEG, END and PRE-CHANGE-LENGTH locally."
+  (cl-incf lsp-rocks--current-file-version)
+  (pcase (and (listp lsp-rocks--recent-changes)
+           (car lsp-rocks--recent-changes))
+    (`(,lsp-beg ,lsp-end
+        (,b-beg . ,b-beg-marker)
+        (,b-end . ,b-end-marker))
+      (if (and (= b-end b-end-marker) (= b-beg b-beg-marker)
+            (or (/= beg b-beg) (/= end b-end)))
+        (setcar lsp-rocks--recent-changes
+          `(,lsp-beg ,lsp-end ,(- b-end-marker b-beg-marker)
+             ,(buffer-substring-no-properties b-beg-marker b-end-marker)))
+        (setcar lsp-rocks--recent-changes
+          `(,lsp-beg ,lsp-end ,pre-change-length
+             ,(buffer-substring-no-properties beg end)))))
+    (_ (setf lsp-rocks--recent-changes :emacs-messup)))
+  (when lsp-rocks--change-idle-timer (cancel-timer lsp-rocks--change-idle-timer))
+  (let ((buf (current-buffer)))
+    (setq lsp-rocks--change-idle-timer
+      (run-with-idle-timer
+        lsp-rocks--send-changes-idle-time
+        nil (lambda () (lsp-rocks--when-live-buffer buf
+                         (when lsp-rocks-mode
+                           (lsp-rocks--send-did-change)
+                           (setq lsp-rocks--change-idle-timer nil))))))))
+
+(defun lsp-rocks--send-did-change ()
+  "Send textDocument/didChange to server."
+  (when lsp-rocks--recent-changes
+    (let ((full-sync-p (eq :emacs-messup lsp-rocks--recent-changes)))
+      (lsp-rocks--notice "textDocument/didChange"
+        (list :textDocument
+          (list :uri buffer-file-name :version lsp-rocks--current-file-version)
+          :contentChanges
+          (if full-sync-p
+            (list (list :text (lsp-rocks--save-restriction-and-excursion
+                                (buffer-substring-no-properties (point-min)
+                                  (point-max)))))
+            (cl-loop for (beg end len text) in (reverse lsp-rocks--recent-changes)
+              when (numberp len)
+              collect (list :range (list :start beg :end end)
+                        :rangeLength len :text text)))))
+      (setq lsp-rocks--recent-changes nil))))
+
+;; (defun lsp-rocks--before-change (begin end)
+;;   (setq-local lsp-rocks--before-change-begin-pos (lsp-rocks--point-position begin))
+;;   (setq-local lsp-rocks--before-change-end-pos (lsp-rocks--point-position end)))
+
+;; (defun lsp-rocks--after-change (begin end len)
+;;   (save-match-data
+;;     (let ((inhibit-quit t))
+;;       (when (not revert-buffer-in-progress-p)
+;;         (setq lsp-rocks--current-file-version (1+ lsp-rocks--current-file-version))
+;;         (lsp-rocks--did-change begin end len)
+;;         (lsp-rocks--signature-help t 3 nil)))))
 
 (defun lsp-rocks--before-revert-hook ()
   (lsp-rocks--did-close))
@@ -1590,35 +1684,7 @@ CALLBACK is the status callback passed by Flycheck."
                                                :end-column (1+ (plist-get end :character)))))
                                           diagnostics)))
                              (funcall callback 'finished errors)))
-                       (funcall callback 'finished '())))))
-  ;; (if-let ((diagnostics (lsp-rocks-call-sync "pullDiagnostics" (buffer-file-name))))
-  ;;     (progn
-  ;;       (let ((errors (mapcar
-  ;;                      (lambda (diagnostic)
-  ;;                        (let* ((range (plist-get diagnostic :range))
-  ;;                               (start (plist-get range :start))
-  ;;                               (end (plist-get range :end)))
-  ;;                          (flycheck-error-new
-  ;;                           :buffer (current-buffer)
-  ;;                           :checker checker
-  ;;                           :filename (buffer-file-name)
-  ;;                           :message (plist-get diagnostic :message)
-  ;;                           :level (pcase (plist-get diagnostic :severity)
-  ;;                                    (1 'error)
-  ;;                                    (2 'warning)
-  ;;                                    (3 'info)
-  ;;                                    (4 'info)
-  ;;                                    (_ 'error))
-  ;;                           :id (plist-get diagnostic :code)
-  ;;                           :group (plist-get diagnostic :source)
-  ;;                           :line (1+ (plist-get start :line))
-  ;;                           :column (1+ (plist-get start :character))
-  ;;                           :end-line (1+ (plist-get end :line))
-  ;;                           :end-column (1+ (plist-get end :character)))))
-  ;;                      diagnostics)))
-  ;;         (funcall callback 'finished errors)))
-  ;;   (funcall callback 'finished '()))
-  )
+                       (funcall callback 'finished '()))))))
 
 (defun lsp-rocks--diagnostics-flycheck-report ()
   "Report flycheck.
@@ -1683,7 +1749,7 @@ textDocument/didOpen for the new file."
 
 (defun lsp-rocks--enable ()
   (when buffer-file-name
-    (if (epc:live-p lsp-rocks-process)
+    (if (lsp-rocks-epc--live-p lsp-rocks-process)
         (progn
           (setq-local lsp-rocks--completion-trigger-characters nil)
           (lsp-rocks-register-internal-hooks)

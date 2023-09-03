@@ -101,7 +101,7 @@ class Connection {
       });
     });
 
-    connection.trace(Trace.Verbose, {
+    connection.trace(Trace.Off, {
       log(messageOrDataObject: string | any, data?: string) {
         if (Is.string(messageOrDataObject)) {
           const msg = `${messageOrDataObject}\n${data}`;

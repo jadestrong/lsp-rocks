@@ -33,7 +33,7 @@ export class LspRocks {
   public async start() {
     this._server = await init_epc_server();
     this._server?.logger &&
-      (this._server.logger.level = IS_DEBUG ? 'debug' : 'info');
+      (this._server.logger.level = IS_DEBUG ? 'debug' : 'error');
     this._server?.defineMethod('message', async (message: RequestMessage) => {
       this.recentRequests.set(message.cmd, message.id);
       const response = await this.messageHandler(message);
@@ -113,13 +113,13 @@ export class LspRocks {
 
   public async messageHandler(req: RequestMessage) {
     const { id, cmd, params } = req;
-    const filepath = params.textDocument.uri;
-    params.textDocument.uri = URI.file(filepath).toString();
     logger.info(
       `receive message => id: ${id}, cmd: ${cmd}, params: ${JSON.stringify(
         req.params,
       )}`,
     );
+    const filepath = params.textDocument.uri;
+    params.textDocument.uri = URI.file(filepath).toString();
 
     let data: any = null;
     const {
@@ -182,24 +182,14 @@ export class LspRocks {
       data = await Promise.all(
         clients.map(client => client.on(req.cmd, req.params)),
       );
-      logger.debug({
-        msg: 'request response',
-        data,
-      });
       data = data.filter(item => (Array.isArray(item) ? item.length : !!item));
       data = data[0];
     }
-    // data = await Promise.race([
-    //   temp,
-    // ]);
-    // logger.debug({
-    //   cmd: req.cmd,
-    //   data,
-    // });
-    // data = await client.on(req.cmd, req.params);
     if (this.recentRequests.get(req.cmd) != req.id) {
+      logger.debug(`not equal`);
       return;
     }
+
     return {
       id,
       cmd,

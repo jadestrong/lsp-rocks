@@ -165,11 +165,11 @@ export class CompletionItemResolveFeature extends RunnableDynamicFeature<
           value: detail,
         };
       } else if (typeof documentation === 'string') {
-        resp.documentation = `${detail}\r\n\r\n${documentation}`;
+        resp.documentation = `${detail}\n\n${documentation}`;
       } else {
         resp.documentation = {
           ...documentation,
-          value: `${detail}\r\n\r\n${documentation.value}`,
+          value: '```' + detail + '```\\n\\n' + documentation.value,
         };
       }
 

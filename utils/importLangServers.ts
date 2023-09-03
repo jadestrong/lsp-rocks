@@ -11,7 +11,7 @@ export function importLangServers() {
         return;
       }
       const tasks = files
-        .filter(file => file.endsWith('.ts'))
+        .filter(file => file.endsWith('.ts') || file.endsWith('.js'))
         .map(async file => {
           const filePath = join(langServerPath, file);
           const { default: config } = await import(filePath);

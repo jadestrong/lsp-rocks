@@ -2,9 +2,9 @@ const typescript: ServerConfig = {
   name: 'ts-ls',
   command: 'typescript-language-server',
   args: ['--stdio'],
+  // args: ['--log-level=4', '--stdio', ],
   supportExtensions: ['tsx', 'jsx', 'ts', 'js', 'mjs', '.mts'],
   initializeOptions: () => ({
-    logVerbosity: 'off',
     maxTsServerMemory: 3072,
     plugins: [
       {

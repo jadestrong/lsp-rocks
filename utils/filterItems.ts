@@ -26,7 +26,7 @@ function guessPrefix(
   } else {
     startCharacter =
       Math.max(
-        ...['"', ':', '’', "'", '‘', '.', '(', '<', ' '].map(char =>
+        ...['"', ':', '’', "'", '‘', '.', '(', '<', '/', ' '].map(char =>
           pretext.lastIndexOf(char),
         ),
       ) + 1;
@@ -34,7 +34,7 @@ function guessPrefix(
   if (prefixMap[startCharacter] != null) {
     return prefixMap[startCharacter];
   }
-  const prefix = pretext.slice(startCharacter);
+  const prefix = pretext.slice(startCharacter).toLowerCase();
   const codes = getCharCodes(prefix);
   prefixMap[startCharacter] = [prefix, codes];
   return [prefix, codes];
@@ -51,7 +51,7 @@ function filterItems(pretext: string, items: CompletionItem[]) {
       originItem: items[i],
     };
     const { label } = item.originItem;
-    const filterText = item.originItem.filterText ?? label;
+    const filterText = (item.originItem.filterText ?? label).toLowerCase();
     if (filterText.length < prefix.length) continue;
     if (!emptyInput) {
       let positions: ReadonlyArray<number> | undefined;
