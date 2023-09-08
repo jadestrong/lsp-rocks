@@ -44,7 +44,7 @@
 ;; Utility
 
 (defvar lsp-rocks-epc--debug-out nil)
-(defvar lsp-rocks-epc--debug-buffer "*epc log*")
+(defvar lsp-rocks-epc--debug-buffer "*lsp rocks epc log*")
 
 (defvar lsp-rocks-epc--mngr)
 

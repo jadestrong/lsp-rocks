@@ -399,6 +399,12 @@ Setting this to nil or 0 will turn off the indicator."
 
 (defvar-local lsp-rocks--current-file-version 0)
 
+(defvar-local lsp-rocks--recent-changes nil
+  "Recent buffer changes as collected by `lsp-rocks--before-change'.")
+
+(defvar-local lsp-rocks--change-idle-timer nil
+  "Idle timer for didChange signals.")
+
 (defconst lsp-rocks--kind->symbol
   '((1 . text)
     (2 . method)
@@ -773,6 +779,7 @@ File paths with spaces are only supported inside strings."
               :text (buffer-substring-no-properties (point-min) (point-max)))))
 
 (defun lsp-rocks--did-open ()
+  (setq lsp-rocks--recent-changes nil lsp-rocks--current-file-version 0)
   (when buffer-file-name
     (when (not (f-exists? buffer-file-name))
       (save-buffer))
@@ -1502,11 +1509,6 @@ Doubles as an indicator of snippet support."
   (if (= 0 n) ""
     (concat (lsp-rocks--random-alnum) (lsp-rocks--random-string (1- n)))))
 
-(defvar-local lsp-rocks--recent-changes nil
-  "Recent buffer changes as collected by `lsp-rocks--before-change'.")
-(defvar-local lsp-rocks--change-idle-timer nil
-  "Idle timer for didChange signals.")
-
 (defun lsp-rocks--before-change (beg end)
   "Hook onto `before-change-functions' with BEG and END."
   (when (listp lsp-rocks--recent-changes)
@@ -1654,6 +1656,7 @@ Records BEG, END and PRE-CHANGE-LENGTH locally."
 (defun lsp-rocks-diagnostics--flycheck-start (checker callback)
   "Start an LSP syntax check with CHECKER.
 CALLBACK is the status callback passed by Flycheck."
+  (remove-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer t)
   (deferred:$
    (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
    (deferred:nextc it
@@ -1690,12 +1693,12 @@ CALLBACK is the status callback passed by Flycheck."
   "Report flycheck.
 This is invoked by lsp-rocks."
   (with-current-buffer (current-buffer)
-    (add-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer)
+    (add-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer nil t)
     (lsp-rocks--idle-reschedule (current-buffer))))
 
 (defun lsp-rocks-diagnostics--flycheck-buffer ()
   "Trigger flycheck on buffer."
-  (remove-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-start t)
+  (remove-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer t)
   (when (bound-and-true-p flycheck-mode)
     (flycheck-buffer)))
 
