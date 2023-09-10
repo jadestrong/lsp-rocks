@@ -5,6 +5,7 @@ import {
 import { URI } from 'vscode-uri';
 import { fileUriToProject } from './project';
 import { eval_in_emacs } from './epc-utils';
+import { logger } from './logger';
 
 interface DiagnosticItem {
   source: string;
@@ -36,6 +37,7 @@ class DiagnosticCenter {
     source: string,
     diagnosticsParams: PublishDiagnosticsParams,
   ) {
+    let isReport = true;
     let items = this.diagnosticMap.get(projectRoot);
     if (!items) {
       items = [];
@@ -50,9 +52,37 @@ class DiagnosticCenter {
         source,
       });
     } else {
+      if (
+        (!theItem.diagnostics.length &&
+          !diagnosticsParams.diagnostics.length) ||
+        JSON.stringify(theItem.diagnostics) ===
+          JSON.stringify(diagnosticsParams.diagnostics)
+      ) {
+        isReport = false;
+      }
       theItem.diagnostics = diagnosticsParams.diagnostics;
     }
-    eval_in_emacs('lsp-rocks--diagnostics-flycheck-report');
+
+    if (!isReport) {
+      return;
+    }
+    const diagnostics = items
+      .filter(item => item.uri === diagnosticsParams.uri)
+      .reduce((prev, cur) => {
+        return prev.concat(cur.diagnostics);
+      }, [] as Diagnostic[]);
+
+    logger.info({
+      msg: `diagnostics ${source}`,
+      data: diagnosticsParams,
+    });
+
+    const filePath = URI.parse(diagnosticsParams.uri).fsPath;
+    eval_in_emacs(
+      'lsp-rocks--diagnostics-flycheck-report',
+      filePath,
+      diagnostics,
+    );
   }
 }
 

@@ -217,7 +217,6 @@
 (defun lsp-rocks-shutdown-buffers ()
   (interactive)
   (let ((files (lsp-rocks-call-sync "get-all-opened-files")))
-    (message "files %s" files)
     (cl-dolist (file files)
       (when-let* ((buf (get-file-buffer file))
                    (buffer-live-p buf))
@@ -241,7 +240,6 @@ Returns non nil if `lsp-rocks-mode' was enabled for the buffer."
   (interactive)
   (setq lsp-rocks-is-starting nil)
   (let ((files (lsp-rocks-call-sync "get-all-opened-files")))
-    (message "files %s" files)
     (cl-dolist (file files)
       (when-let* ((buf (get-file-buffer file))
                    (buffer-live-p buf))
@@ -1653,48 +1651,80 @@ Records BEG, END and PRE-CHANGE-LENGTH locally."
     (add-hook (car hook) (cdr hook) nil t))
   (lsp-rocks-diagnostics-flycheck-enable))
 
+(defvar-local lsp-rocks--record-diagnostics nil
+  "Record current buffer's diagnostics.")
+
 (defun lsp-rocks-diagnostics--flycheck-start (checker callback)
   "Start an LSP syntax check with CHECKER.
 CALLBACK is the status callback passed by Flycheck."
   (remove-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer t)
-  (deferred:$
-   (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
-   (deferred:nextc it
-                   (lambda (diagnostics)
-                     (if diagnostics
-                         (progn
-                           (let ((errors (mapcar
-                                          (lambda (diagnostic)
-                                            (let* ((range (plist-get diagnostic :range))
-                                                   (start (plist-get range :start))
-                                                   (end (plist-get range :end)))
-                                              (flycheck-error-new
-                                               :buffer (current-buffer)
-                                               :checker checker
-                                               :filename (buffer-file-name)
-                                               :message (plist-get diagnostic :message)
-                                               :level (pcase (plist-get diagnostic :severity)
-                                                        (1 'error)
-                                                        (2 'warning)
-                                                        (3 'info)
-                                                        (4 'info)
-                                                        (_ 'error))
-                                               :id (plist-get diagnostic :code)
-                                               :group (plist-get diagnostic :source)
-                                               :line (1+ (plist-get start :line))
-                                               :column (1+ (plist-get start :character))
-                                               :end-line (1+ (plist-get end :line))
-                                               :end-column (1+ (plist-get end :character)))))
-                                          diagnostics)))
-                             (funcall callback 'finished errors)))
-                       (funcall callback 'finished '()))))))
+  (if lsp-rocks--record-diagnostics
+    (progn
+      (let ((errors (mapcar
+                      (lambda (diagnostic)
+                        (let* ((range (plist-get diagnostic :range))
+                                (start (plist-get range :start))
+                                (end (plist-get range :end)))
+                          (flycheck-error-new
+                            :buffer (current-buffer)
+                            :checker checker
+                            :filename (buffer-file-name)
+                            :message (plist-get diagnostic :message)
+                            :level (pcase (plist-get diagnostic :severity)
+                                     (1 'error)
+                                     (2 'warning)
+                                     (3 'info)
+                                     (4 'info)
+                                     (_ 'error))
+                            :id (plist-get diagnostic :code)
+                            :group (plist-get diagnostic :source)
+                            :line (1+ (plist-get start :line))
+                            :column (1+ (plist-get start :character))
+                            :end-line (1+ (plist-get end :line))
+                            :end-column (1+ (plist-get end :character)))))
+                      lsp-rocks--record-diagnostics)))
+        (funcall callback 'finished errors)))
+    (funcall callback 'finished '())))
+  ;; (deferred:$
+  ;;  (lsp-rocks-call-async "pullDiagnostics" (buffer-file-name))
+  ;;  (deferred:nextc it
+  ;;                  (lambda (diagnostics)
+  ;;                    (if diagnostics
+  ;;                        (progn
+  ;;                          (let ((errors (mapcar
+  ;;                                         (lambda (diagnostic)
+  ;;                                           (let* ((range (plist-get diagnostic :range))
+  ;;                                                  (start (plist-get range :start))
+  ;;                                                  (end (plist-get range :end)))
+  ;;                                             (flycheck-error-new
+  ;;                                              :buffer (current-buffer)
+  ;;                                              :checker checker
+  ;;                                              :filename (buffer-file-name)
+  ;;                                              :message (plist-get diagnostic :message)
+  ;;                                              :level (pcase (plist-get diagnostic :severity)
+  ;;                                                       (1 'error)
+  ;;                                                       (2 'warning)
+  ;;                                                       (3 'info)
+  ;;                                                       (4 'info)
+  ;;                                                       (_ 'error))
+  ;;                                              :id (plist-get diagnostic :code)
+  ;;                                              :group (plist-get diagnostic :source)
+  ;;                                              :line (1+ (plist-get start :line))
+  ;;                                              :column (1+ (plist-get start :character))
+  ;;                                              :end-line (1+ (plist-get end :line))
+  ;;                                              :end-column (1+ (plist-get end :character)))))
+  ;;                                         diagnostics)))
+  ;;                            (funcall callback 'finished errors)))
+  ;;                      (funcall callback 'finished '())))))
 
-(defun lsp-rocks--diagnostics-flycheck-report ()
-  "Report flycheck.
+(defun lsp-rocks--diagnostics-flycheck-report (filepath diagnostics)
+  "Report current FILEPATH's DIAGNOSTICS.
 This is invoked by lsp-rocks."
-  (with-current-buffer (current-buffer)
-    (add-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer nil t)
-    (lsp-rocks--idle-reschedule (current-buffer))))
+  (when (f-exists? filepath)
+    (with-current-buffer (find-file-noselect filepath)
+      (setq-local lsp-rocks--record-diagnostics diagnostics)
+      (add-hook 'lsp-rocks-on-idle-hook #'lsp-rocks-diagnostics--flycheck-buffer nil t)
+      (lsp-rocks--idle-reschedule (current-buffer)))))
 
 (defun lsp-rocks-diagnostics--flycheck-buffer ()
   "Trigger flycheck on buffer."
